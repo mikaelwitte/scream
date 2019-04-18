@@ -68,6 +68,8 @@ code. At this point you can run all tests with:
 cd ${RUN_ROOT_DIR}/test
 ctest -VV
 ```
+Note that in HPC environments, this command will likely need to be submitted
+to the batch queue (via srun, bsub, etc.). Individual tests may also be run.
 To just run the p3_regression test, for example, execute:
 ```
 cd ${RUN_ROOT_DIR}/test/
