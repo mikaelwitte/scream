@@ -14,10 +14,10 @@ mkdir -p ${RUN_ROOT_DIR}/test/          #where scream is installed
 ## Create dependencies
 Get Kokkos:
 ```
-cd ${KOKKOS_SRC_LOC}
-git clone http://github.com/kokkos/kokkos
+git clone http://github.com/kokkos/kokkos ${KOKKOS_SRC_LOC}
 #The next step avoids bug where kokkos_generated_settings.cmake
 #can get put in unexpected directory locations:
+cd ${KOKKOS_SRC_LOC}
 git checkout develop
 ```
 Configure it as a debug build and build it:
