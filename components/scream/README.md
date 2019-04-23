@@ -47,7 +47,7 @@ cmake \
     -D Kokkos_DIR=${RUN_ROOT_DIR}/kokkos/install \
     -D SCREAM_ENABLE_FPE=FALSE \
     -D CMAKE_BUILD_TYPE=RelWithDebInfo \
-    ${SCREAM_SRC_LOC}/scream/components/scream
+    ${SCREAM_SRC_LOC}/components/scream
 make -j8
 ```
 
