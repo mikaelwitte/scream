@@ -24,7 +24,8 @@ module micro_p3_utils
 #endif
 
     public :: get_latent_heat, micro_p3_utils_init, size_dist_param_liq, &
-              size_dist_param_basic,avg_diameter, rising_factorial, calculate_incloud_mixingratios
+              size_dist_param_basic,avg_diameter, rising_factorial, calculate_incloud_mixingratios, &
+              evaporate_sublimate_precip, ice_deposition_sublimation
 
     integer, public :: iulog_e3sm
     logical, public :: masterproc_e3sm
@@ -43,6 +44,9 @@ module micro_p3_utils
        thrd,sxth,piov3,piov6,rho_rimeMin,     &
        rho_rimeMax,inv_rho_rimeMax,max_total_Ni,dbrk,nmltratio,clbfact_sub,  &
        clbfact_dep
+
+    real(rtype), public :: gamma_half_br_plus5
+
     real(rtype),dimension(16), public :: dnu
 
     real(rtype), public, parameter :: mu_r_constant = 1.0_rtype
@@ -192,11 +196,11 @@ end interface var_coef
     ep_2   = mwh2o/mwdry  ! ratio of molecular mass of water to the molecular mass of dry air !0.622
     rhosur = 100000._rtype/(rd*zerodegc) ! density of air at surface
     rhosui = 60000._rtype/(rd*253.15_rtype)
-    ar     = 841.99667_rtype 
-    br     = 0.8_rtype
-    f1r    = 0.78_rtype
-    f2r    = 0.32_rtype
-    ecr    = 1._rtype
+    ar     = 841.99667_rtype   ! Fallspeed param for rain
+    br     = 0.8_rtype         ! Fallspeed param for for rain
+    f1r    = 0.78_rtype        ! Ventilation param for rain
+    f2r    = 0.32_rtype        ! Ventilation param for rain (note, this is 0.308 in MG)
+    ecr    = 1._rtype          ! Collection efficiency for accretion of rain by snow, AaronDonahue: do we need this?
     rhow   = rhoh2o ! Density of liquid water (STP) !997.
     cpw    = cpliq  ! specific heat of fresh h2o (J/K/kg) !4218.
     inv_rhow = 1._rtype/rhow  !inverse of (max.) density of liquid water
@@ -204,6 +208,9 @@ end interface var_coef
     xxlv = latvap           ! latent heat of vaporization
     xxls = latvap + latice  ! latent heat of sublimation
     xlf  = latice           ! latent heat of fusion
+
+    ! calculate gamma here for efficiency
+    gamma_half_br_plus5=gamma(5._rtype/2._rtype+br/2._rtype)
 
     ! limits for rime density [kg m-3]
     rho_rimeMin     =  50._rtype
@@ -275,7 +282,7 @@ end interface var_coef
          ice_lambda_bounds, min_mean_mass_ice)
   
     micro_rain_props = MicroHydrometeorProps(rhow, dsph, lam_bnd_rain)
-    micro_snow_props = MicroHydrometeorProps(rhosn, dsph, lam_bnd_snow)
+    micro_snow_props = MicroHydrometeorProps(rhosn, dsph, lam_bnd_snow) !AaronDonahue, do we need this, there is no snow in P3
     
     return
     end subroutine micro_p3_utils_init
@@ -303,7 +310,21 @@ end interface var_coef
 !       end do
        return
     end subroutine get_latent_heat
+!__________________________________________________________________________________________!
+!                                                                                          !
+!__________________________________________________________________________________________!
+   function calc_ab(t,qv,xxl) result(ab)
+      real(rtype), intent(in) :: t     ! Temperature
+      real(rtype), intent(in) :: qv    ! Saturation vapor pressure
+      real(rtype), intent(in) :: xxl   ! Latent heat
 
+      real(rtype) :: ab
+
+      real(rtype) :: dqsdt
+
+      dqsdt = xxl*qv / (rv * t**2)
+      ab = 1._rtype + dqsdt*xxl/cp
+   end function calc_ab
 !__________________________________________________________________________________________!
 !                                                                                          !
 !__________________________________________________________________________________________!
@@ -505,6 +526,212 @@ function NewMicroHydrometeorProps(rho, eff_dim, lambda_bounds, min_mean_mass) &
   res%shape_coef = rho*pi_e3sm*gamma(eff_dim+1._rtype)/6._rtype
 
 end function NewMicroHydrometeorProps
+!__________________________________________________________________________________________!
+!                                                                                          !
+!__________________________________________________________________________________________!
+subroutine evaporate_sublimate_precip(t, rho, dv, mu, sc, q, qvl, qvi, &
+     lcldm, rcldm, arn, qcic, qiic, qric, nric,  &
+     pre)
+
+  real(rtype), intent(in) :: t     ! temperature
+  real(rtype), intent(in) :: rho   ! air density
+  real(rtype), intent(in) :: dv    ! water vapor diffusivity
+  real(rtype), intent(in) :: mu    ! viscosity
+  real(rtype), intent(in) :: sc    ! schmidt number
+  real(rtype), intent(in) :: q     ! humidity
+  real(rtype), intent(in) :: qvl   ! saturation humidity (water)
+  real(rtype), intent(in) :: qvi   ! saturation humidity (ice)
+  real(rtype), intent(in) :: lcldm ! liquid cloud fraction
+  real(rtype), intent(in) :: rcldm ! precipitation fraction (maximum overlap)
+
+  ! fallspeed parameters
+  real(rtype), intent(in) :: arn  ! rain
+!  real(rtype), intent(in) :: asn  ! snow  ! P3 doesn't have a snow parameter
+
+  ! In-cloud MMRs
+  real(rtype), intent(in) :: qcic ! cloud liquid
+  real(rtype), intent(in) :: qiic ! cloud ice
+  real(rtype), intent(in) :: qric ! rain
+  real(rtype), intent(in) :: nric ! rain number
+  !real(rtype), intent(in) :: qsic ! snow  ! AaronDonahue, we are probably going to get rid of this since P3 doesn't have snow
+
+  ! Output tendencies
+  real(rtype), intent(out) :: pre
+!  real(rtype), intent(out) :: prds
+
+  ! Size parameters
+  ! rain
+  real(rtype) :: lamr
+  real(rtype) :: n0r
+  ! snow, AaronDonahue, will probably remove since P3 doesn't have snow
+  real(rtype) :: lams
+  real(rtype) :: n0s
+
+  real(rtype) :: qclr   ! water vapor mixing ratio in clear air
+  real(rtype) :: ab     ! correction to account for latent heat
+  real(rtype) :: eps    ! 1/ sat relaxation timescale
+
+  real(rtype) :: dum
+  real(rtype) :: nr_dum
+
+  ! set temporary cloud fraction to zero if cloud water + ice is very small
+  ! this will ensure that evaporation/sublimation of precip occurs over
+  ! entire grid cell, since min cloud fraction is specified otherwise
+  if (qcic+qiic < 1.e-6_rtype) then
+     dum = 0._rtype
+  else
+     dum = lcldm
+  end if
+
+  nr_dum = nric
+
+  ! only calculate if there is some precip fraction > cloud fraction
+
+  if (rcldm > dum) then
+
+     call size_dist_param_basic(micro_rain_props, qric, nr_dum, lamr, n0r)
+
+     ! calculate q for out-of-cloud region
+     qclr=(q-dum*qvl)/(1._rtype-dum)
+
+     ! evaporation of rain
+     if (qric >= qsmall) then
+
+        ab = calc_ab(t, qvl, xxlv)
+        eps = 2._rtype*pi_e3sm*n0r*rho*Dv* &
+             (f1r/(lamr*lamr)+ &
+             f2r*(arn*rho/mu)**0.5_rtype* &
+             sc**(1._rtype/3._rtype)*gamma_half_br_plus5/ &
+             (lamr**(5._rtype/2._rtype+br/2._rtype)))
+
+        pre = eps*(qclr-qvl)/ab
+
+        ! only evaporate in out-of-cloud region
+        ! and distribute across rcldm
+        pre=min(pre*(rcldm-dum),0._rtype)
+        pre=pre/rcldm
+     else
+        pre = 0._rtype
+     end if
+
+!     ! sublimation of snow - AaronDonahue: P3 doesn't have snow, so we should
+!     ! probably get rid of this.
+!     if (qsic >= qsmall) then
+!        ab = calc_ab(t, qvi, xxls)
+!        eps = 2._rtype*pi_e3sm*n0s*rho*Dv* &
+!             (f1s/(lams*lams)+ &
+!             f2s*(asn*rho/mu)**0.5_rtype* &
+!             sc**(1._rtype/3._rtype)*gamma_half_bs_plus5/ &
+!             (lams**(5._rtype/2._rtype+bs/2._rtype)))
+!        prds = eps*(qclr-qvi)/ab
+!
+!        ! only sublimate in out-of-cloud region and distribute over rcldm
+!        prds=min(prds*(rcldm-dum),0._rtype)
+!        prds=prds/rcldm
+!     else
+!        prds = 0._rtype
+!     end if
+
+  else
+!     prds = 0._rtype
+     pre = 0._rtype
+  end if
+
+  return
+end subroutine evaporate_sublimate_precip
+!__________________________________________________________________________________________!
+!                                                                                          !
+!__________________________________________________________________________________________!
+subroutine ice_deposition_sublimation(t, qv, qi, ni, &
+                                                icldm, rho, dv,qvl, qvi,  &
+                                                berg, vap_dep, ice_sublim)
+
+  ! This routine calculates vapor deposition/ice sublimation rates and
+  ! the Bergeron rate for cloud water. Note that Bergeron occurs where there's 
+  ! cloud and vapor deposition occurs where there isn't... both processes can't
+  ! occur at the same time. This function calculates rates assuming there's never
+  ! cloud for vapor deposition and always cloud for Bergeron. The fraction of the
+  ! timestep before cloud disappears is calculated in the 'conservation checks'
+  ! section and used to decide how much Bergeron vs vapor deposition should occur.
+  ! Originally written by Peter Caldwell in 2012.
+
+  !INPUT VARS:
+  !===============================================
+  real(rtype), intent(in) :: t     !temperature (K)
+  real(rtype), intent(in) :: qv    !cell-ave vapor mixing ratio (kg/kg)
+  real(rtype), intent(in) :: qi    !cell-ave ice mixing ratio (kg/kg)
+  real(rtype), intent(in) :: ni    !cell-ave ice crystal # (#/kg)
+  real(rtype), intent(in) :: icldm !ice cloud fraction (assumed = liq cld frac)
+  real(rtype), intent(in) :: rho   !air(?) density
+  real(rtype), intent(in) :: dv    !vapor diffusivity in air
+  real(rtype), intent(in) :: qvl   !saturation mixing ratio wrt liquid  (kg/kg)
+  real(rtype), intent(in) :: qvi   !saturation mixing ratio wrt ice  (kg/kg)
+
+  !OUTPUT VARS:
+  !===============================================
+  real(rtype), intent(out) :: vap_dep !ice deposition (cell-ave value)
+  real(rtype), intent(out) :: ice_sublim !ice sublimation (cell-ave value)
+  real(rtype), intent(out) :: berg !bergeron tendency (cell-ave value)
+
+  !INTERNAL VARS:
+  !===============================================
+  real(rtype) :: ab      !correction for condensational heating reducing dqs/dT
+  real(rtype) :: epsi    !reciprocal of timescale for ice saturation removal due to vapor diffusion
+  real(rtype) :: qiic    !in-cloud qi
+  real(rtype) :: niic    !in-cloud ni
+  real(rtype) :: lami    
+  real(rtype) :: n0i
+
+  if (qi>=qsmall) then
+
+     !GET IN-CLOUD qi, ni
+     !===============================================
+     qiic = qi/icldm
+     niic = ni/icldm
+
+     !Compute linearized condensational heating correction
+     ab=calc_ab(t, qvi, xxls)
+
+     ! Calculate lami and n0i, AaronDonahue: Added this, it was missing from
+     ! Peter C branch.  In MG there is an optional logical that switches how
+     ! lami and n0i are determined.  This option isn't in this version so
+     ! defaulting to the basic calculation.
+     call size_dist_param_basic(micro_ice_props, qiic, niic, lami, n0i)
+
+     !Get depletion timescale=1/eps
+     epsi = 2._rtype*pi_e3sm*n0i*rho*Dv/(lami*lami)
+
+     !Compute deposition/sublimation
+     vap_dep = epsi/ab*(qv - qvi)
+
+     !Make this a grid-averaged quantity
+     vap_dep=vap_dep*icldm
+
+     !Split into deposition or sublimation.
+     if (t < zerodegc .and. vap_dep>0._rtype) then
+        ice_sublim=0._rtype
+     else
+     ! make ice_sublim negative for consistency with other evap/sub processes
+        ice_sublim=min(vap_dep,0._rtype)
+        vap_dep=0._rtype
+     end if
+
+     !sublimation occurs @ any T. Not so for berg.
+     if (t < zerodegc) then
+
+        !Compute bergeron rate assuming cloud for whole step.
+        berg = max(epsi/ab*(qvl - qvi), 0._rtype)
+     else !T>frz
+        berg=0._rtype
+     end if !T<frz
+
+  else !where qi<qsmall
+     berg=0._rtype
+     vap_dep=0._rtype
+     ice_sublim=0._rtype
+  end if !qi>qsmall
+
+end subroutine ice_deposition_sublimation
 !__________________________________________________________________________________________!
 !                                                                                          !
 !__________________________________________________________________________________________!
