@@ -501,7 +501,7 @@ contains
          tmpint1,ktop,kbot,kdir,  &
          k_qxbot,k_qxtop,k_temp
 
-    logical :: log_nucleationPossible,log_hydrometeorsPresent,log_predictSsat,     &
+    logical :: log_nucleationPossible,log_hydrometeorsPresent,     &
          log_exitlevel,       &
          log_qxpresent
 
@@ -541,10 +541,6 @@ contains
     !PMC deleted 'threshold size difference' calculation for multicategory here
 
     deltaD_init = 999._rtype    !not used if n_iceCat=1 (but should be defined)
-
-    ! Note:  Code for prediction of supersaturation is available in current version.
-    !        In the future 'log_predictSsat' will be a user-defined namelist key.
-    log_predictSsat = .false.
 
     inv_dzq    = 1._rtype/dzq  ! inverse of thickness of layers
     odt        = 1._rtype/dt   ! inverse model time step
@@ -618,16 +614,17 @@ contains
           qvs(i,k)     = qv_sat(t_old(i,k),pres(i,k),0)
           qvi(i,k)     = qv_sat(t_old(i,k),pres(i,k),1)
 
-          ! if supersaturation is not predicted or during the first time step, then diagnose from qv and T (qvs)
-          if (.not.(log_predictSsat).or.it.eq.1) then
+          ! AaronDonahue: If we remove super-saturation adj, do we need qv_old?
+          ! AaronDonahue: below loop isn't required if not using ssat, remove it
+          ! when ready, but is not-BFB
+!          if (it.eq.1) then
              ssat(i,k)    = qv_old(i,k)-qvs(i,k)
              sup(i,k)     = qv_old(i,k)/qvs(i,k)-1._rtype
              supi(i,k)    = qv_old(i,k)/qvi(i,k)-1._rtype
              ! if supersaturation is predicted then diagnose sup and supi from ssat
-          else if ((log_predictSsat).and.it.gt.1) then
-             sup(i,k)     = ssat(i,k)/qvs(i,k)
-             supi(i,k)    = (ssat(i,k)+qvs(i,k)-qvi(i,k))/qvi(i,k)
-          endif
+!          end if
+!          sup(i,k)     = qv_old(i,k)/qvs(i,k)-1._rtype
+!          supi(i,k)    = qv_old(i,k)/qvi(i,k)-1._rtype
 
           rhofacr(i,k) = (rhosur*inv_rho(i,k))**0.54_rtype
           rhofaci(i,k) = (rhosui*inv_rho(i,k))**0.54_rtype
@@ -755,40 +752,6 @@ contains
 
           log_wetgrowth = .false.
 
-          !----------------------------------------------------------------------
-          predict_supersaturation: if (log_predictSsat) then
-
-             ! Adjust cloud water and thermodynamics to prognostic supersaturation
-             ! following the method in Grabowski and Morrison (2008).
-             ! Note that the effects of vertical motion are assumed to dominate the
-             ! production term for supersaturation, and the effects are sub-grid
-             ! scale mixing and radiation are not explicitly included.
-
-             dqsdt   = xxlv(i,k)*qvs(i,k)/(rv*t(i,k)*t(i,k))
-             ab      = 1._rtype + dqsdt*xxlv(i,k)*inv_cp
-             epsilon = (qv(i,k)-qvs(i,k)-ssat(i,k))/ab
-             epsilon = max(epsilon,-qc(i,k))   ! limit adjustment to available water
-             ! don't adjust upward if subsaturated
-             ! otherwise this could result in positive adjustment
-             ! (spurious generation ofcloud water) in subsaturated conditions
-             if (ssat(i,k).lt.0._rtype) epsilon = min(0._rtype,epsilon)
-
-             ! now do the adjustment
-             if (abs(epsilon).ge.1.e-15_rtype) then
-                qc(i,k)   = qc(i,k)+epsilon
-                qc_incld(i,k)   = qc(i,k)*inv_lcldm(i,k)
-                qv(i,k)   = qv(i,k)-epsilon
-                th(i,k)   = th(i,k)+epsilon*exner(i,k)*xxlv(i,k)*inv_cp
-                ! recalculate variables if there was adjustment
-                t(i,k)    = th(i,k)*inv_exner(i,k) !*(1.e-5*pres(i,k))**(rd*inv_cp)
-                qvs(i,k)  = qv_sat(t(i,k),pres(i,k),0)
-                qvi(i,k)  = qv_sat(t(i,k),pres(i,k),1)
-                sup(i,k)  = qv(i,k)/qvs(i,k)-1._rtype
-                supi(i,k) = qv(i,k)/qvi(i,k)-1._rtype
-                ssat(i,k) = qv(i,k)-qvs(i,k)
-             endif
-
-          endif predict_supersaturation
           !----------------------------------------------------------------------
 
           ! skip micro process calculations except nucleation/acvtivation if there no hydrometeors are present
@@ -2373,15 +2336,6 @@ contains
        !.....................................................
 
 333    continue
-
-       if (log_predictSsat) then
-          ! recalculate supersaturation from T and qv
-          do k = kbot,ktop,kdir
-             t(i,k) = th(i,k)*inv_exner(i,k) !(1.e-5*pres(i,k))**(rd*inv_cp)
-             dum    = qv_sat(t(i,k),pres(i,k),0)
-             ssat(i,k) = qv(i,k)-dum
-          enddo
-       endif
 
        if (debug_ON) then
           tmparr1(i,:) = th(i,:)*inv_exner(i,:)!(pres(i,:)*1.e-5)**(rd*inv_cp)
