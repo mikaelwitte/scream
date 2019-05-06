@@ -546,6 +546,7 @@ end subroutine micro_p3_readnl
    call addfld('P3_nrheti', (/ 'lev' /), 'A', 'kg/kg/s', 'P3 Tendency for immersion freezing rain')
    call addfld('P3_nrshdr', (/ 'lev' /), 'A', 'kg/kg/s', 'P3 Tendency for source for rain number from collision of rain/ice above freezing and shedding')
    call addfld('P3_qcshd',  (/ 'lev' /), 'A', 'kg/kg/s', 'P3 Tendency for source for rain mass due to cloud water/ice collision above freezing and shedding or wet growth and shedding')
+   call addfld('P3_berg',   (/ 'lev' /), 'A', 'kg/kg/s', 'P3 Tendency due to the Bergeron process') 
    call addfld('P3_ncshdc', (/ 'lev' /), 'A', 'kg/kg/s', 'P3 Tendency for source for rain number due to cloud water/ice collision above freezing  and shedding (combined with NRSHD in the paper)')
    ! Sedimentation 
    call addfld('P3_sed_CLDLIQ',  (/ 'lev' /), 'A', 'kg/kg/s', 'P3 Tendency for liquid cloud content due to sedimentation')
@@ -634,6 +635,7 @@ end subroutine micro_p3_readnl
          call add_default('P3_nrheti', 1, ' ')
          call add_default('P3_nrshdr', 1, ' ')
          call add_default('P3_qcshd',  1, ' ')
+         call add_default('P3_berg',   1, ' ')
          call add_default('P3_ncshdc', 1, ' ')
          ! Sedimentation
          call add_default('P3_sed_CLDLIQ',  1, ' ')
@@ -1528,7 +1530,7 @@ end subroutine micro_p3_readnl
    call outfld('P3_nrheti', tend_out(:,:,31), pcols, lchnk) 
    call outfld('P3_nrshdr', tend_out(:,:,32), pcols, lchnk) 
    call outfld('P3_qcshd',  tend_out(:,:,33), pcols, lchnk) 
-!   call outfld('P3_qcmul',  tend_out(:,:,34), pcols, lchnk) ! Not actually used, so not actually recorded.  Commented out here for continuity of the array.
+   call outfld('P3_berg',   tend_out(:,:,34), pcols, lchnk) 
    call outfld('P3_ncshdc', tend_out(:,:,35), pcols, lchnk)
    ! sedimentation 
    call outfld('P3_sed_CLDLIQ',  tend_out(:,:,36), pcols, lchnk)

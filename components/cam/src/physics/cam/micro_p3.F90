@@ -281,8 +281,8 @@ contains
           do kk = 1,10000
 
              dia = (real(kk)*dd-dd*0.5_rtype)*1.e-6_rtype  ! size bin [m]
-             amg = piov6*997._rtype*dia**3           ! mass [kg]
-             amg = amg*1000._rtype                   ! convert [kg] to [g]
+             amg = piov6*rhow*dia**3           ! mass [kg]  ! AaronDonahue: does this mean that density is hard-coded?  Changing 997 in this expression to rhow from p3_utils
+             amg = amg*1000._rtype             ! convert [kg] to [g]
 
              !get fallspeed as a function of size [m s-1]
              if (dia*1.e+6_rtype.le.134.43_rtype)      then
@@ -410,6 +410,7 @@ contains
 
     real(rtype), dimension(its:ite,kts:kte) :: lamc
     real(rtype), dimension(its:ite,kts:kte) :: lamr
+!    real(rtype), dimension(its:ite,kts:kte) :: lami
     real(rtype), dimension(its:ite,kts:kte) :: logn0r
     real(rtype), dimension(its:ite,kts:kte) :: mu_c
 
@@ -1094,36 +1095,47 @@ contains
           !PMC comment: Morrison and Milbrandt 2015 part 1 and 2016 part 3 both say
           !that Hallet-Mossop should be neglected if 1 category to compensate for
           !artificial smearing out of ice DSD
+!AaronDonahue: We have effectively removed the following tendencies by
+! commenting out what is below,
+!    qcevp
+!    qccon (note that for it=1 qccon is defined below commented section)
+!    qrcon
+!    nrevp (considering that qrevp still exists this should probably be defined too)
+!    nisub (considering that qisub still exists this should probably be defined too)
+!
+!    qrevp has been moved to evaporate_sublimate_precip
+!    qidep has been moved to ice_deposition_sublimation
+!    qisub has been moved to ice_deposition_sublimation
 
 !! ASD          !................................................
 !! ASD          ! condensation/evaporation/deposition/sublimation
 !! ASD          !   (use semi-analytic formulation)
 !! ASD
 !! ASD          ! calculate rain evaporation including ventilation
-!! ASD          if (qr_incld(i,k).ge.qsmall) then
-!! ASD             call find_lookupTable_indices_3(dumii,dumjj,dum1,rdumii,rdumjj,inv_dum3,mu_r(i,k),lamr(i,k))
-!! ASD             !interpolate value at mu_r
-!! ASD! bug fix 12/23/18
-!! ASD!             dum1 = revap_table(dumii,dumjj)+(rdumii-real(dumii))*inv_dum3*                  &
-!! ASD!                    (revap_table(dumii+1,dumjj)-revap_table(dumii,dumjj))
-!! ASD
-!! ASD             dum1 = revap_table(dumii,dumjj)+(rdumii-real(dumii))*                            &
-!! ASD                    (revap_table(dumii+1,dumjj)-revap_table(dumii,dumjj))
-!! ASD
-!! ASD             !interoplate value at mu_r+1
-!! ASD! bug fix 12/23/18
-!! ASD!             dum2 = revap_table(dumii,dumjj+1)+(rdumii-real(dumii))*inv_dum3*                &
-!! ASD!                  (revap_table(dumii+1,dumjj+1)-revap_table(dumii,dumjj+1))
-!! ASD             dum2 = revap_table(dumii,dumjj+1)+(rdumii-real(dumii))*                          &
-!! ASD                    (revap_table(dumii+1,dumjj+1)-revap_table(dumii,dumjj+1))    
-!! ASD             !final interpolation
-!! ASD             dum  = dum1+(rdumjj-real(dumjj))*(dum2-dum1)
-!! ASD
-!! ASD             epsr = 2._rtype*pi*cdistr(i,k)*rho(i,k)*dv*(f1r*gamma(mu_r(i,k)+2._rtype)/(lamr(i,k))+f2r*   &
-!! ASD                  (rho(i,k)/mu)**0.5_rtype*sc**thrd*dum)
-!! ASD          else
-!! ASD             epsr = 0._rtype
-!! ASD          endif
+          if (qr_incld(i,k).ge.qsmall) then
+             call find_lookupTable_indices_3(dumii,dumjj,dum1,rdumii,rdumjj,inv_dum3,mu_r(i,k),lamr(i,k))
+             !interpolate value at mu_r
+! bug fix 12/23/18
+!             dum1 = revap_table(dumii,dumjj)+(rdumii-real(dumii))*inv_dum3*                  &
+!                    (revap_table(dumii+1,dumjj)-revap_table(dumii,dumjj))
+
+             dum1 = revap_table(dumii,dumjj)+(rdumii-real(dumii))*                            &
+                    (revap_table(dumii+1,dumjj)-revap_table(dumii,dumjj))
+
+             !interoplate value at mu_r+1
+! bug fix 12/23/18
+!             dum2 = revap_table(dumii,dumjj+1)+(rdumii-real(dumii))*inv_dum3*                &
+!                  (revap_table(dumii+1,dumjj+1)-revap_table(dumii,dumjj+1))
+             dum2 = revap_table(dumii,dumjj+1)+(rdumii-real(dumii))*                          &
+                    (revap_table(dumii+1,dumjj+1)-revap_table(dumii,dumjj+1))    
+             !final interpolation
+             dum  = dum1+(rdumjj-real(dumjj))*(dum2-dum1)
+
+             epsr = 2._rtype*pi*cdistr(i,k)*rho(i,k)*dv*(f1r*gamma(mu_r(i,k)+2._rtype)/(lamr(i,k))+f2r*   &
+                  (rho(i,k)/mu)**0.5_rtype*sc**thrd*dum)
+          else
+             epsr = 0._rtype
+          endif
 !! ASD
 !! ASD          if (qc_incld(i,k).ge.qsmall) then
 !! ASD             epsc = 2._rtype*pi*rho(i,k)*dv*cdist(i,k)
@@ -1238,16 +1250,24 @@ contains
 !! ASD             qidep = qidep*clbfact_dep
 !! ASD          endif
 
+
+          dumqvs = qv_sat(t(i,k),pres(i,k),0)
           call evaporate_sublimate_precip( &
                 t(i,k), rho(i,k), dv, mu, sc, qv(i,k), &                     ! INPUT
-                qvs(i,k), qvi(i,k), lcldm(i,k), rcldm(i,k), arn(i,k), &      ! INPUT
+                dumqvs, qvi(i,k), lcldm(i,k), rcldm(i,k), arn(i,k), &      ! INPUT
                 qc_incld(i,k), qitot_incld(i,k), qr_incld(i,k), nr_incld(i,k), & ! INPUT
+                lamr(i,k), logn0r(i,k), epsr, &                        ! INPUT
                 qrevp)                                                       ! OUTPUT
+          if (qr_incld(i,k).gt.qsmall)  nrevp = qrevp*(nr_incld(i,k)/qr_incld(i,k)) ! AaronDonahue, taken from previously commented out section
+
+!          call get_rain_dsd2(qitot(i,k),nitot(i,k),mu_r(i,k),rdumii,dumii,lami(i,k),     &
+!               mu_r_table,tmp1,tmp2,icldm(i,k))  ! AaronDonahue, we need to make one of these for ice?  When done update the variables passed to ice_depo below.
 
           call ice_deposition_sublimation( &
                 t(i,k), qv(i,k), qitot(i,k), nitot(i,k), icldm(i,k), &  ! INPUT
-                rho(i,k), dv, qvs(i,k), qvi(i,k),                    &  ! INPUT
+                rho(i,k), dv, dumqvs, qvi(i,k), epsi,       &  ! INPUT
                 berg, qidep, qisub)                                     ! OUTPUT
+          if (qitot_incld(i,k).gt.qsmall) nisub = qisub*(nitot_incld(i,k)/qitot_incld(i,k)) ! AaronDonahue, taken from previously commented out section
 
 444       continue
 
@@ -1304,7 +1324,7 @@ contains
 
           !................................................................
           ! saturation adjustment to get initial cloud water
-
+          ! AaronDonahue: Do we need to get rid of this too?
           ! This is only called once at the beginning of the simulation
           ! to remove any supersaturation in the intial conditions
 
@@ -1490,7 +1510,7 @@ contains
           qidep   = qidep*icldm(i,k)  ! Vapor deposition to ice phase
           nrheti  = nrheti*rcldm(i,k) ! Change in number due to immersion freezing of rain
           nisub   = nisub*icldm(i,k)  ! Number change due to sublimation of ice
-          berg    = berg              ! AaronDonahue, it's unclear to me what to scale berg by?
+          berg    = berg*icldm(i,k)   ! AaronDonahue, it's unclear to me what to scale berg by?
             ! AaronDonahue: These variables are related to aerosol activation and their usage will be changed in a later PR.
           qinuc   = qinuc             ! Deposition and condensation-freezing nucleation, already cell-averaged
           ninuc   = ninuc             ! Number change due to deposition and condensation-freezing, already cell-averaged
@@ -1556,7 +1576,7 @@ contains
           ! ice
           sinks   = (qisub+qimlt)*dt
           sources = qitot(i,k) + (qidep+qinuc+qrcol+qccol+  &
-               qrheti+qcheti)*dt
+               qrheti+qcheti+berg)*dt  !AaronDonahue, adding berg as a source following qcheti as a template for how to do this with qc -> qi tendencies
           if (sinks.gt.sources .and. sinks.ge.1.e-20_rtype) then
              ratio = sources/sinks
              qisub = qisub*ratio
@@ -1567,10 +1587,10 @@ contains
           !---------------------------------------------------------------------------------
           ! update prognostic microphysics and thermodynamics variables
           !---------------------------------------------------------------------------------
-
+!          write(*,'(A8,F16.8,2x,6(8E,2x))') ' ASD: ', dt, qr(i,k), qitot(i,k), qv(i,k), berg, qidep, qisub
           !-- ice-phase dependent processes:
 
-          qc(i,k) = qc(i,k) + (-qcheti-qccol-qcshd)*dt
+          qc(i,k) = qc(i,k) + (-qcheti-qccol-qcshd-berg)*dt
           if (log_predictNc) then
              nc(i,k) = nc(i,k) + (-nccol-ncheti)*dt
           endif
@@ -1592,9 +1612,10 @@ contains
           endif
 
           dum             = (qrcol+qccol+qrheti+          &
-               qcheti)*dt
+               qcheti+berg)*dt
           qitot(i,k) = qitot(i,k) + (qidep+qinuc)*dt + dum
           qirim(i,k) = qirim(i,k) + dum
+          ! AaronDonahue: How does berg impact birim?
           birim(i,k) = birim(i,k) + (qrcol*inv_rho_rimeMax+qccol/  &
                rhorime_c+(qrheti+     &
                qcheti)*inv_rho_rimeMax)*dt
@@ -1629,7 +1650,7 @@ contains
 
           th(i,k) = th(i,k) + exner(i,k)*((qidep-qisub+qinuc)*     &
                xxls(i,k)*inv_cp +(qrcol+qccol+   &
-               qcheti+qrheti-qimlt)*       &  
+               qcheti+qrheti-qimlt+berg)*       &  
                xlf(i,k)*inv_cp)*dt
 
           !==
@@ -1727,7 +1748,7 @@ contains
           p3_tend_out(i,k,31) = nrheti    ! immersion freezing rain
           p3_tend_out(i,k,32) = nrshdr    ! source for rain number from collision of rain/ice above freezing and shedding
           p3_tend_out(i,k,33) = qcshd     ! source for rain mass due to cloud water/ice collision above freezing and shedding or wet growth and shedding
-          p3_tend_out(i,k,34) = 0._rtype  ! used to be qcmul, but that has been removed.  Kept at 0.0 as placeholder.
+          p3_tend_out(i,k,34) = berg      ! Bergeron process
           p3_tend_out(i,k,35) = ncshdc    ! source for rain number due to cloud water/ice collision above freezing  and shedding (combined with NRSHD in the paper) 
           ! measure microphysics processes tendency output
           p3_tend_out(i,k,42) = qc(i,k)    - p3_tend_out(i,k,42) ! Liq. microphysics tendency, measure 
@@ -1981,7 +2002,7 @@ contains
                    dum1 = vm_table(dumii,dumjj)+(rdumii-real(dumii))*                       &
                           (vm_table(dumii+1,dumjj)-vm_table(dumii,dumjj))       !at mu_r
                    dum2 = vm_table(dumii,dumjj+1)+(rdumii-real(dumii))*                     &
-                          (vm_table(dumii+1,dumjj+1)-vm_table(dumii,dumjj+1))   !at mu_r+1
+                          (vm_table(dumii+1,dumjj+1)-vm_table(dumii,dumjj+1))   !at mu_r+1     ! AaronDonahue: Because mu_r is constant, dum2=dum1, thus V_qr = dum1
                    V_qr(k) = dum1 + (rdumjj-real(dumjj))*(dum2-dum1)         !interpolated
                    V_qr(k) = V_qr(k)*rhofacr(i,k)               !corrected for air density
 
@@ -1995,7 +2016,7 @@ contains
                    dum1 = vn_table(dumii,dumjj)+(rdumii-real(dumii))*                       &
                           (vn_table(dumii+1,dumjj)-vn_table(dumii,dumjj))       !at mu_r
                    dum2 = vn_table(dumii,dumjj+1)+(rdumii-real(dumii))*                     &
-                          (vn_table(dumii+1,dumjj+1)-vn_table(dumii,dumjj+1))   !at mu_r+1
+                          (vn_table(dumii+1,dumjj+1)-vn_table(dumii,dumjj+1))   !at mu_r+1      ! AaronDonahue: Because mu_r is constant, dum2=dum1, thus V_nr = dum1
 
                    V_nr(k) = dum1+(rdumjj-real(dumjj))*(dum2-dum1)            !interpolated
                    V_nr(k) = V_nr(k)*rhofacr(i,k)                !corrected for air density
@@ -2823,7 +2844,7 @@ contains
        ! find spot in lookup table
        ! (scaled N/q for lookup table parameter space_
        nr      = max(nr,nsmall)
-       inv_dum = (qr/(cons1*nr*6._rtype))**thrd
+!       inv_dum = (qr/(cons1*nr*6._rtype))**thrd
 
        ! Apply constant mu_r:  Recall the switch to v4 tables means constant mu_r
        mu_r = mu_r_constant
@@ -2869,6 +2890,78 @@ contains
 
   end subroutine get_rain_dsd2
 
+  !===========================================================================================
+  subroutine get_ice_dsd2(qr,nr,mu_r,rdumii,dumii,lamr,mu_r_table,cdistr,logn0r,rcldm)
+
+    ! Computes and returns rain size distribution parameters
+
+    implicit none
+
+    !arguments:
+    real(rtype), dimension(:), intent(in)  :: mu_r_table
+    real(rtype),     intent(in)            :: qr,rcldm
+    real(rtype),     intent(inout)         :: nr
+    real(rtype),     intent(out)           :: rdumii,lamr,mu_r,cdistr,logn0r
+    integer,  intent(out)           :: dumii
+
+    !local variables:
+    real(rtype)                            :: inv_dum,lammax,lammin
+
+    !--------------------------------------------------------------------------
+
+    if (qr.ge.qsmall) then
+
+       ! use lookup table to get mu
+       ! mu-lambda relationship is from Cao et al. (2008), eq. (7)
+
+       ! find spot in lookup table
+       ! (scaled N/q for lookup table parameter space_
+       nr      = max(nr,nsmall)
+!       inv_dum = (qr/(cons1*nr*6._rtype))**thrd    ! Caclulate diamere
+
+       ! Apply constant mu_r:  Recall the switch to v4 tables means constant mu_r
+       mu_r = mu_r_constant
+       ! AaronDonahue: Comment out the variable mu_r calculation below.
+!       if (inv_dum.lt.282.e-6) then   ! If diameter is less than 282 microns
+!          mu_r = 8.282
+!       elseif (inv_dum.ge.282.e-6 .and. inv_dum.lt.502.e-6) then
+!          ! interpolate
+!          rdumii = (inv_dum-250.e-6)*1.e+6*0.5
+!          rdumii = max(rdumii,1.)
+!          rdumii = min(rdumii,150.)
+!          dumii  = int(rdumii)
+!          dumii  = min(149,dumii)
+!          mu_r   = mu_r_table(dumii)+(mu_r_table(dumii+1)-mu_r_table(dumii))*(rdumii-  &
+!               real(dumii))
+!       elseif (inv_dum.ge.502.e-6) then
+!          mu_r = 0.
+!       endif
+
+       lamr   = (cons1*nr*(mu_r+3._rtype)*(mu_r+2._rtype)*(mu_r+1._rtype)/(qr))**thrd  ! recalculate slope based on mu_r
+       lammax = (mu_r+1._rtype)*1.e+5_rtype   ! check for slope
+       lammin = (mu_r+1._rtype)*1250._rtype   ! set to small value since breakup is explicitly included (mean size 0.8 mm)
+
+       ! apply lambda limiters for rain
+       if (lamr.lt.lammin) then
+          lamr = lammin
+          nr   = exp(3._rtype*log(lamr)+log(qr)+log(gamma(mu_r+1._rtype))-log(gamma(mu_r+4._rtype)))/(cons1)
+       elseif (lamr.gt.lammax) then
+          lamr = lammax
+          nr   = exp(3._rtype*log(lamr)+log(qr)+log(gamma(mu_r+1._rtype))-log(gamma(mu_r+4._rtype)))/(cons1)
+       endif
+
+       cdistr  = nr*rcldm/gamma(mu_r+1._rtype)
+       logn0r  = log10(nr)+(mu_r+1._rtype)*log10(lamr)-log10(gamma(mu_r+1._rtype)) !note: logn0r is calculated as log10(n0r)
+
+    else
+
+       lamr   = 0._rtype
+       cdistr = 0._rtype
+       logn0r = 0._rtype
+
+    endif
+
+  end subroutine get_ice_dsd2
 
   !===========================================================================================
   subroutine calc_bulkRhoRime(qi_tot,qi_rim,bi_rim,rho_rime)
