@@ -424,7 +424,6 @@ contains
     !  (all Q process rates in kg kg-1 s-1)
     !  (all N process rates in # kg-1)
 
-    real(rtype) :: qrcon   ! rain condensation   (Not in paper?)
     real(rtype) :: qcacc   ! cloud droplet accretion by rain
     real(rtype) :: qcaut   ! cloud droplet autoconversion to rain
     real(rtype) :: ncacc   ! change in cloud droplet number from accretion by rain
@@ -435,7 +434,6 @@ contains
     real(rtype) :: qccon   ! cloud droplet condensation
     real(rtype) :: qcnuc   ! activation of cloud droplets from CCN
     real(rtype) :: qrevp   ! rain evaporation
-    real(rtype) :: qcevp   ! cloud droplet evaporation
     real(rtype) :: nrevp   ! change in rain number from evaporation
     real(rtype) :: ncautr  ! change in rain number from autoconversion of cloud water
 
@@ -619,15 +617,10 @@ contains
           qvs(i,k)     = qv_sat(t_old(i,k),pres(i,k),0)
           qvi(i,k)     = qv_sat(t_old(i,k),pres(i,k),1)
 
-          ! AaronDonahue: If we remove super-saturation adj, do we need qv_old?
-          ! AaronDonahue: below loop isn't required if not using ssat, remove it
-          ! when ready, but is not-BFB
-!          if (it.eq.1) then
-!             ssat(i,k)    = qv_old(i,k)-qvs(i,k)
-!             sup(i,k)     = qv_old(i,k)/qvs(i,k)-1._rtype
-!             supi(i,k)    = qv_old(i,k)/qvi(i,k)-1._rtype
-!             ! if supersaturation is predicted then diagnose sup and supi from ssat
-!          end if
+          ! AaronDonahue: Removing qv_old since it is only needed for
+          ! super-saturation adj. which we no longer do.  Question: Do we still
+          ! need th_old?
+          ! TODO: Remove qv_old and th_old references in P3.
           sup(i,k)     = qv(i,k)/qvs(i,k)-1._rtype
           supi(i,k)    = qv(i,k)/qvi(i,k)-1._rtype
 
@@ -731,7 +724,7 @@ contains
 
           ! initialize warm-phase process rates
           qcacc   = 0._rtype;     qrevp   = 0._rtype;     qccon   = 0._rtype
-          qcaut   = 0._rtype;     qcevp   = 0._rtype;     qrcon   = 0._rtype
+          qcaut   = 0._rtype;
           ncacc   = 0._rtype;     ncnuc   = 0._rtype;     ncslf   = 0._rtype
           ncautc  = 0._rtype;     qcnuc   = 0._rtype;     nrslf   = 0._rtype
           nrevp   = 0._rtype;     ncautr  = 0._rtype
@@ -1095,37 +1088,28 @@ contains
           !PMC comment: Morrison and Milbrandt 2015 part 1 and 2016 part 3 both say
           !that Hallet-Mossop should be neglected if 1 category to compensate for
           !artificial smearing out of ice DSD
-!AaronDonahue: We have effectively removed the following tendencies by
-! commenting out what is below,
+
+!AaronDonahue: We have effectively removed the following tendencies by replacing
+!this section with what is found below,
 !    qcevp
 !    qccon (note that for it=1 qccon is defined below commented section)
 !    qrcon
-!    nrevp (considering that qrevp still exists this should probably be defined too)
-!    nisub (considering that qisub still exists this should probably be defined too)
-!
+!AaronDonahue: and moved others to individual subroutines:
 !    qrevp has been moved to evaporate_sublimate_precip
+!    nrevp has been moved to evaporate_sublimate_precip
 !    qidep has been moved to ice_deposition_sublimation
 !    qisub has been moved to ice_deposition_sublimation
+!    nisub has been moved to ice_deposition_sublimation 
 
-!! ASD          !................................................
-!! ASD          ! condensation/evaporation/deposition/sublimation
-!! ASD          !   (use semi-analytic formulation)
-!! ASD
-!! ASD          ! calculate rain evaporation including ventilation
           if (qr_incld(i,k).ge.qsmall) then
              call find_lookupTable_indices_3(dumii,dumjj,dum1,rdumii,rdumjj,inv_dum3,mu_r(i,k),lamr(i,k))
              !interpolate value at mu_r
-! bug fix 12/23/18
-!             dum1 = revap_table(dumii,dumjj)+(rdumii-real(dumii))*inv_dum3*                  &
-!                    (revap_table(dumii+1,dumjj)-revap_table(dumii,dumjj))
-
              dum1 = revap_table(dumii,dumjj)+(rdumii-real(dumii))*                            &
                     (revap_table(dumii+1,dumjj)-revap_table(dumii,dumjj))
 
-             !interoplate value at mu_r+1
-! bug fix 12/23/18
-!             dum2 = revap_table(dumii,dumjj+1)+(rdumii-real(dumii))*inv_dum3*                &
-!                  (revap_table(dumii+1,dumjj+1)-revap_table(dumii,dumjj+1))
+             !interoplate value at mu_r+1, AaronDonahue: I think since mu_r is a
+             !constant now this means dum2 = dum1 and ultimately dum = dum1, see
+             !below.
              dum2 = revap_table(dumii,dumjj+1)+(rdumii-real(dumii))*                          &
                     (revap_table(dumii+1,dumjj+1)-revap_table(dumii,dumjj+1))    
              !final interpolation
@@ -1136,138 +1120,18 @@ contains
           else
              epsr = 0._rtype
           endif
-!! ASD
-!! ASD          if (qc_incld(i,k).ge.qsmall) then
-!! ASD             epsc = 2._rtype*pi*rho(i,k)*dv*cdist(i,k)
-!! ASD          else
-!! ASD             epsc = 0._rtype
-!! ASD          endif
-!! ASD          !===
-!! ASD
-!! ASD          !PMC moved oabi outside t<273.15 loop. oabi is only *used* where t<273.15, but
-!! ASD          !t could be updated before oabi is used, resulting in unititialized use. Note
-!! ASD          !that t is not currently being updated before oabi is used, so this is just future-proofing.
-!! ASD          oabi = 1._rtype/abi
-!! ASD          
-!! ASD          if (t(i,k).lt.zerodegc) then
-!! ASD             xx   = epsc + epsr + epsi_tot*(1._rtype+xxls(i,k)*inv_cp*dqsdt)*oabi
-!! ASD          else
-!! ASD             xx   = epsc + epsr
-!! ASD          endif
-!! ASD
-!! ASD          dumqvi = qvi(i,k)   !no modification due to latent heating
-!! ASD          !----
-!! ASD          ! !      ! modify due to latent heating from riming rate
-!! ASD          ! !      !   - currently this is done by simple linear interpolation
-!! ASD          ! !      !     between conditions for dry and wet growth --> in wet growth it is assumed
-!! ASD          ! !      !     that particle surface temperature is at 0 C and saturation vapor pressure
-!! ASD          ! !      !     is that with respect to liquid. This simple treatment could be improved in the future.
-!! ASD          ! !        if (qwgrth.ge.1.e-20) then
-!! ASD          ! !           dum = (qccol+qrcol)/qwgrth
-!! ASD          ! !        else
-!! ASD          ! !           dum = 0.
-!! ASD          ! !        endif
-!! ASD          ! !        dumqvi = qvi(i,k) + dum*(qvs(i,k)-qvi(i,k))
-!! ASD          ! !        dumqvi = min(qvs(i,k),dumqvi)
-!! ASD          !====
-!! ASD
-!! ASD
-!! ASD          ! 'A' term including ice (Bergeron process)
-!! ASD          ! note: qv and T tendencies due to mixing and radiation are
-!! ASD          ! currently neglected --> assumed to be much smaller than cooling
-!! ASD          ! due to vertical motion which IS included
-!! ASD
-!! ASD          ! The equivalent vertical velocity is set to be consistent with dT/dt
-!! ASD          ! since -g/cp*dum = dT/dt therefore dum = -cp/g*dT/dt
-!! ASD          ! note this formulation for dT/dt is not exact since pressure
-!! ASD          ! may change and t and t_old were both diagnosed using the current pressure
-!! ASD          ! errors from this assumption are small
-!! ASD          dum = -cp/g*(t(i,k)-t_old(i,k))*odt
-!! ASD
-!! ASD          if (t(i,k).lt.zerodegc) then
-!! ASD             aaa = (qv(i,k)-qv_old(i,k))*odt - dqsdt*(-dum*g*inv_cp)-(qvs(i,k)-dumqvi)*     &
-!! ASD                  (1._rtype+xxls(i,k)*inv_cp*dqsdt)*oabi*epsi_tot
-!! ASD          else
-!! ASD             aaa = (qv(i,k)-qv_old(i,k))*odt - dqsdt*(-dum*g*inv_cp)
-!! ASD          endif
-!! ASD
-!! ASD          xx  = max(1.e-20_rtype,xx)   ! set lower bound on xx to prevent division by zero
-!! ASD          oxx = 1._rtype/xx
-!! ASD
-!! ASD          if (qc_incld(i,k).ge.qsmall) &
-!! ASD               qccon = (aaa*epsc*oxx+(ssat(i,k)-aaa*oxx)*odt*epsc*oxx*(1.-dexp(-dble(xx*dt))))/ab
-!! ASD          if (qr_incld(i,k).ge.qsmall) &
-!! ASD               qrcon = (aaa*epsr*oxx+(ssat(i,k)-aaa*oxx)*odt*epsr*oxx*(1.-dexp(-dble(xx*dt))))/ab
-!! ASD
-!! ASD          !for very small water contents, evaporate instantly
-!! ASD          if (sup(i,k).lt.-0.001_rtype .and. qc_incld(i,k).lt.1.e-12_rtype)  qccon = -qc_incld(i,k)*odt
-!! ASD          if (sup(i,k).lt.-0.001_rtype .and. qr_incld(i,k).lt.1.e-12_rtype)  qrcon = -qr_incld(i,k)*odt
-!! ASD
-!! ASD          if (qccon.lt.0._rtype) then
-!! ASD             qcevp = -qccon
-!! ASD             qccon = 0._rtype
-!! ASD          endif
-!! ASD
-!! ASD          if (qrcon.lt.0._rtype) then
-!! ASD             qrevp = -qrcon
-!! ASD             nrevp = qrevp*(nr_incld(i,k)/qr_incld(i,k))
-!! ASD             !nrevp = nrevp*exp(-0.2*mu_r(i,k))  !add mu dependence [Seifert (2008), neglecting size dependence]
-!! ASD             qrcon = 0._rtype
-!! ASD          endif
-!! ASD
-!! ASD          !limit total condensation/evaporation to saturation adjustment
-!! ASD          dumqvs = qv_sat(t(i,k),pres(i,k),0)
-!! ASD          qcon_satadj  = (qv(i,k)-dumqvs)/(1._rtype+xxlv(i,k)**2*dumqvs/(cp*rv*t(i,k)**2))*odt
-!! ASD          if (qccon+qrcon.gt.0._rtype) then
-!! ASD             ratio = max(0._rtype,qcon_satadj)/(qccon+qrcon)
-!! ASD             ratio = min(1._rtype,ratio)
-!! ASD             qccon = qccon*ratio
-!! ASD             qrcon = qrcon*ratio
-!! ASD          elseif (qcevp+qrevp.gt.0._rtype) then
-!! ASD             ratio = max(0._rtype,-qcon_satadj)/(qcevp+qrevp)
-!! ASD             ratio = min(1._rtype,ratio)
-!! ASD             qcevp = qcevp*ratio
-!! ASD             qrevp = qrevp*ratio
-!! ASD          endif
-!! ASD
-!! ASD          if (qitot_incld(i,k).ge.qsmall.and.t(i,k).lt.zerodegc) then
-!! ASD             qidep = (aaa*epsi*oxx+(ssat(i,k)-aaa*oxx)*odt*epsi*oxx*   &
-!! ASD                  (1._rtype-dexp(-dble(xx*dt))))*oabi+(qvs(i,k)-dumqvi)*epsi*oabi
-!! ASD          endif
-!! ASD
-!! ASD          !for very small ice contents in dry air, sublimate all ice instantly
-!! ASD          if (supi(i,k).lt.-0.001_rtype .and. qitot_incld(i,k).lt.1.e-12_rtype) &
-!! ASD               qidep = -qitot_incld(i,k)*odt
-!! ASD
-!! ASD          if (qidep.lt.0._rtype) then
-!! ASD             !note: limit to saturation adjustment (for dep and subl) is applied later
-!! ASD             qisub = -qidep
-!! ASD             qisub = qisub*clbfact_sub
-!! ASD             qisub = min(qisub, qitot_incld(i,k)*dt)
-!! ASD             nisub = qisub*(nitot_incld(i,k)/qitot_incld(i,k))
-!! ASD             qidep = 0._rtype
-!! ASD          else
-!! ASD             qidep = qidep*clbfact_dep
-!! ASD          endif
-
 
           dumqvs = qv_sat(t(i,k),pres(i,k),0)
           call evaporate_sublimate_precip( &
-                t(i,k), rho(i,k), dv, mu, sc, qv(i,k), &                     ! INPUT
-                dumqvs, qvi(i,k), lcldm(i,k), rcldm(i,k), arn(i,k), &      ! INPUT
-                qc_incld(i,k), qitot_incld(i,k), qr_incld(i,k), nr_incld(i,k), & ! INPUT
-                lamr(i,k), logn0r(i,k), epsr, &                        ! INPUT
+                t(i,k), mu, qv(i,k), dumqvs, lcldm(i,k), rcldm(i,k),  &      ! INPUT
+                qc_incld(i,k), qitot_incld(i,k), qr_incld(i,k), epsr, &      ! INPUT
                 qrevp)                                                       ! OUTPUT
-          if (qr_incld(i,k).gt.qsmall)  nrevp = qrevp*(nr_incld(i,k)/qr_incld(i,k)) ! AaronDonahue, taken from previously commented out section
-
-!          call get_rain_dsd2(qitot(i,k),nitot(i,k),mu_r(i,k),rdumii,dumii,lami(i,k),     &
-!               mu_r_table,tmp1,tmp2,icldm(i,k))  ! AaronDonahue, we need to make one of these for ice?  When done update the variables passed to ice_depo below.
+          if (qr_incld(i,k).gt.qsmall)  nrevp = qrevp*(nr_incld(i,k)/qr_incld(i,k)) ! AaronDonahue, taken from previously removed section
 
           call ice_deposition_sublimation( &
-                t(i,k), qv(i,k), qitot(i,k), nitot(i,k), icldm(i,k), &  ! INPUT
-                rho(i,k), dv, dumqvs, qvi(i,k), epsi,       &  ! INPUT
-                berg, qidep, qisub)                                     ! OUTPUT
-          if (qitot_incld(i,k).gt.qsmall) nisub = qisub*(nitot_incld(i,k)/qitot_incld(i,k)) ! AaronDonahue, taken from previously commented out section
+                t(i,k), qv(i,k), qitot(i,k), icldm(i,k), dumqvs, qvi(i,k), epsi, &  ! INPUT
+                berg, qidep, qisub)                                                 ! OUTPUT
+          if (qitot_incld(i,k).gt.qsmall) nisub = qisub*(nitot_incld(i,k)/qitot_incld(i,k)) ! AaronDonahue, taken from previously removed section
 
 444       continue
 
@@ -1480,8 +1344,6 @@ contains
           qrevp   = qrevp*rcldm(i,k)  ! Evaporation of rain
           qccon   = qccon*lcldm(i,k)  ! Condensation of liquid
           qcaut   = qcaut*lcldm(i,k)  ! Autoconversion of liquid
-          qcevp   = qcevp*lcldm(i,k)  ! Evaporation of liquid, AaronDonahue: there is no equivalent ncevp, this should be investigated
-          qrcon   = qrcon*rcldm(i,k)  ! Condensation of rain
           ncacc   = ncacc*lr_cldm     ! Number change due to accretion
           ncslf   = ncslf*lcldm(i,k)  ! Self collection occurs locally in liq. cloud
           ncautc  = ncautc*lcldm(i,k) ! Impact of autoconversion on number
@@ -1540,13 +1402,12 @@ contains
           !          cannot possibly overdeplete qv
 
           ! cloud
-          sinks   = (qcaut+qcacc+qccol+qcevp+qcheti+qcshd+berg)*dt  !PMC remove ssat (added berg)
+          sinks   = (qcaut+qcacc+qccol+qcheti+qcshd+berg)*dt  !PMC remove ssat (added berg)
           sources = qc(i,k) + (qccon+qcnuc)*dt
           if (sinks.gt.sources .and. sinks.ge.1.e-20_rtype) then
              ratio  = sources/sinks
              qcaut  = qcaut*ratio
              qcacc  = qcacc*ratio
-             qcevp  = qcevp*ratio
              qccol  = qccol*ratio
              qcheti = qcheti*ratio
              qcshd  = qcshd*ratio
@@ -1565,7 +1426,7 @@ contains
 
           ! rain
           sinks   = (qrevp+qrcol+qrheti)*dt
-          sources = qr(i,k) + (qrcon+qcaut+qcacc+qimlt+qcshd)*dt
+          sources = qr(i,k) + (qcaut+qcacc+qimlt+qcshd)*dt
           if (sinks.gt.sources .and. sinks.ge.1.e-20_rtype) then
              ratio  = sources/sinks
              qrevp  = qrevp*ratio
@@ -1656,8 +1517,8 @@ contains
           !==
 
           !-- warm-phase only processes:
-          qc(i,k) = qc(i,k) + (-qcacc-qcaut+qcnuc+qccon-qcevp)*dt
-          qr(i,k) = qr(i,k) + (qcacc+qcaut+qrcon-qrevp)*dt
+          qc(i,k) = qc(i,k) + (-qcacc-qcaut+qcnuc+qccon)*dt
+          qr(i,k) = qr(i,k) + (qcacc+qcaut-qrevp)*dt
 
           if (log_predictNc) then
              nc(i,k) = nc(i,k) + (-ncacc-ncautc+ncslf)*dt
@@ -1670,13 +1531,13 @@ contains
              nr(i,k) = nr(i,k) + (ncautr-nrslf-nrevp)*dt
           endif
 
-          qv(i,k) = qv(i,k) + (-qcnuc-qccon-qrcon+qcevp+qrevp)*dt
-          th(i,k) = th(i,k) + exner(i,k)*((qcnuc+qccon+qrcon-qcevp-qrevp)*xxlv(i,k)*    &
+          qv(i,k) = qv(i,k) + (-qcnuc-qccon+qrevp)*dt
+          th(i,k) = th(i,k) + exner(i,k)*((qcnuc+qccon-qrevp)*xxlv(i,k)*    &
                inv_cp)*dt
           !==
           ! AaronDonahue - Add extra variables needed from microphysics by E3SM:
           cmeiout(i,k) = qidep - qisub + qinuc 
-          prain(i,k)   = ( qcacc + qcaut + qcshd + qccol ) + qrcon 
+          prain(i,k)   = ( qcacc + qcaut + qcshd + qccol )
           nevapr(i,k)  = qisub + qrevp
           prer_evap(i,k) = qrevp
 
@@ -1714,7 +1575,7 @@ contains
 
           ! Record microphysics tendencies for output:
           ! warm-phase process rates
-          p3_tend_out(i,k, 1) = qrcon   ! rain condensation   (Not in paper?)
+          p3_tend_out(i,k, 1) = 0.0_rtype !qrcon   ! rain condensation   (Not in paper?) AaronDonahue: This needs to be removed
           p3_tend_out(i,k, 2) = qcacc   ! cloud droplet accretion by rain
           p3_tend_out(i,k, 3) = qcaut   ! cloud droplet autoconversion to rain
           p3_tend_out(i,k, 4) = ncacc   ! change in cloud droplet number from accretion by rain
@@ -1725,7 +1586,7 @@ contains
           p3_tend_out(i,k, 9) = qccon   ! cloud droplet condensation
           p3_tend_out(i,k,10) = qcnuc   ! activation of cloud droplets from CCN
           p3_tend_out(i,k,11) = qrevp   ! rain evaporation
-          p3_tend_out(i,k,12) = qcevp   ! cloud droplet evaporation
+          p3_tend_out(i,k,12) = 0.0_rtype !qcevp   ! cloud droplet evaporation !AaronDonahue: This needs to be removed eventually
           p3_tend_out(i,k,13) = nrevp   ! change in rain number from evaporation
           p3_tend_out(i,k,14) = ncautr  ! change in rain number from autoconversion of cloud water
           ! ice-phase  process rates
@@ -1942,8 +1803,8 @@ contains
           prt_liq(i) = prt_accum*inv_rhow*odt  !note, contribution from rain is added below
 
        endif qc_present
-       p3_tend_out(i,:,36) = qc(i,:) - p3_tend_out(i,:,36) ! Liq. sedimentation tendency, measure
-       p3_tend_out(i,:,37) = nc(i,:) - p3_tend_out(i,:,37) ! Liq. # sedimentation tendency, measure
+       p3_tend_out(i,:,36) = ( qc(i,:) - p3_tend_out(i,:,36) ) * odt ! Liq. sedimentation tendency, measure
+       p3_tend_out(i,:,37) = ( nc(i,:) - p3_tend_out(i,:,37) ) * odt ! Liq. # sedimentation tendency, measure
 
 
        !------------------------------------------------------------------------------------------!
@@ -2076,8 +1937,8 @@ contains
           prt_liq(i) = prt_liq(i) + prt_accum*inv_rhow*odt
 
        endif qr_present
-       p3_tend_out(i,:,38) = qr(i,:) - p3_tend_out(i,:,38) ! Rain sedimentation tendency, measure
-       p3_tend_out(i,:,39) = nr(i,:) - p3_tend_out(i,:,39) ! Rain # sedimentation tendency, measure
+       p3_tend_out(i,:,38) = ( qr(i,:) - p3_tend_out(i,:,38) ) * odt ! Rain sedimentation tendency, measure
+       p3_tend_out(i,:,39) = ( nr(i,:) - p3_tend_out(i,:,39) ) * odt ! Rain # sedimentation tendency, measure
 
 
        !------------------------------------------------------------------------------------------!
@@ -2211,8 +2072,8 @@ contains
           prt_sol(i) = prt_sol(i) + prt_accum*inv_rhow*odt
 
        endif qi_present
-       p3_tend_out(i,:,40) = qitot(i,:) - p3_tend_out(i,:,40) ! Ice sedimentation tendency, measure
-       p3_tend_out(i,:,41) = nitot(i,:) - p3_tend_out(i,:,41) ! Ice # sedimentation tendency, measure
+       p3_tend_out(i,:,40) = ( qitot(i,:) - p3_tend_out(i,:,40) ) * odt ! Ice sedimentation tendency, measure
+       p3_tend_out(i,:,41) = ( nitot(i,:) - p3_tend_out(i,:,41) ) * odt ! Ice # sedimentation tendency, measure
 
        !------------------------------------------------------------------------------------------!
 
