@@ -114,10 +114,6 @@ module micro_p3_interface
       frzdep_idx = -1
 
 ! pbuf P3 specific
-   integer :: &
-      p3_qv_idx, &
-      p3_th_idx
-
    real(rtype) :: &
       micro_mg_accre_enhan_fac = huge(1.0_rtype), & !Accretion enhancement factor from namelist
       prc_coef1_in             = huge(1.0_rtype), &
@@ -128,14 +124,6 @@ module micro_p3_interface
       nicons                   = huge(1.0_rtype)
 
    integer :: ncnst
-
-  !Define th (potential temperature) and (water vapor mixing 
-  !ratio) qv at module level so "_old" values can easily be 
-  !assigned at the beginning of each step from the value at the end 
-  !of the step before.
-
-  real(rtype) :: th(pcols,pver)
-  real(rtype) :: qv(pcols,pver)
 
   character(len=8), parameter :: &      ! Constituent names
      cnst_names(8) = (/'CLDLIQ', 'CLDICE','NUMLIQ','NUMICE', &
@@ -275,10 +263,6 @@ end subroutine micro_p3_readnl
 
     ! Add Variables to Pbuf
     !================
-   !! P3 specific PBUF variables
-   call pbuf_add_field('P3_qv','global', dtype_r8,(/pcols,pver/),p3_qv_idx)
-   call pbuf_add_field('P3_th','global', dtype_r8,(/pcols,pver/),p3_th_idx)
-   
    !! module microp_aero
    call pbuf_add_field('CLDO','global', dtype_r8,(/pcols,pver,dyn_time_lvls/),cldo_idx) 
 
@@ -397,10 +381,6 @@ end subroutine micro_p3_readnl
     ! Initialize physics buffer grid fields for accumulating precip and
     ! condensation
     if (is_first_step()) then
-
-
-       call pbuf_set_field(pbuf2d, p3_qv_idx, 0._rtype)
-       call pbuf_set_field(pbuf2d, p3_th_idx, 0._rtype)
 
        call pbuf_set_field(pbuf2d, cldo_idx,   0._rtype)
        call pbuf_set_field(pbuf2d, relvar_idx, 2._rtype)
@@ -819,8 +799,6 @@ end subroutine micro_p3_readnl
     logical :: lq(pcnst)   !list of what constituents to update
 
     !INTERNAL VARIABLES
-    real(rtype), pointer :: th_old(:,:)     !potential temperature from last step   K
-    real(rtype), pointer :: qv_old(:,:)     !water vapor from last step             kg/kg
     real(rtype) :: ssat(pcols,pver)       !supersaturated mixing ratio            kg/kg
     real(rtype) :: dzq(pcols,pver)        !geometric layer thickness              m
     real(rtype) :: cldliq(pcols,pver)     !cloud liquid water mixing ratio        kg/kg
@@ -899,6 +877,7 @@ end subroutine micro_p3_readnl
     ! DONE PBUF
 
     ! Derived Variables
+    real(rtype) :: th(pcols,pver)
     real(rtype) :: tgliqwp(pcols)   ! column liquid
     real(rtype) :: tgcmeliq(pcols)  ! column condensation rate (units)
     real(rtype) :: pe(pcols)        ! precip efficiency for output
@@ -997,9 +976,6 @@ end subroutine micro_p3_readnl
     ! INPUTS
     call pbuf_get_field(pbuf, relvar_idx,      relvar,      col_type=col_type, copy_if_needed=use_subcol_microp) ! Not used in this ver of P3
     call pbuf_get_field(pbuf, accre_enhan_idx, accre_enhan, col_type=col_type, copy_if_needed=use_subcol_microp) ! Not used in this ver of P3
-    ! P3 SPECIFIC
-    call pbuf_get_field(pbuf, p3_qv_idx, qv_old) 
-    call pbuf_get_field(pbuf, p3_th_idx, th_old) 
     ! OUTPUTS
     call pbuf_get_field(pbuf,        cldo_idx,      cldo,     start=(/1,1,itim_old/), kount=(/psetcols,pver,1/), col_type=col_type)
     call pbuf_get_field(pbuf,         qme_idx,       qme,    col_type=col_type)
@@ -1056,15 +1032,10 @@ end subroutine micro_p3_readnl
     !==============
     log_predictNc = micro_aerosolactivation 
 
-    ! GET "OLD" VALUES
     !==============
     ! Note: state%exner is currently defined in a way different than the
     ! traditional definition of exner, so we calculate here.
     exner(:ncol,:pver) = 1._rtype/((state%pmid(:ncol,:pver)*1.e-5_rtype)**(rair*inv_cp))
-    if ( is_first_step() ) then
-       th_old(:ncol,:pver)=state%t(:ncol,:pver)*exner(:ncol,:pver)
-       qv_old(:ncol,:pver)=state%q(:ncol,:pver,1)
-    end if
 
     ! CONVERT T TO POTENTIAL TEMPERATURE
     !==============
@@ -1138,6 +1109,10 @@ end subroutine micro_p3_readnl
     kts     = 1
     kte     = pver
     pres    = state%pmid(:,:)
+    ! Initialize the raidation dependent variables.
+    mu      = mucon
+    lambdac = (mucon + 1._rtype)/dcon
+    dei     = deicon
     ! Determine the cloud fraction and precip cover
     icldm(:,:) = 1.0_rtype
     lcldm(:,:) = 1.0_rtype
@@ -1157,9 +1132,7 @@ end subroutine micro_p3_readnl
          numliq(its:ite,kts:kte),     & ! INOUT  cloud, number mixing ratio       #  kg-1
          rain(its:ite,kts:kte),       & ! INOUT  rain, mass mixing ratio          kg kg-1
          numrain(its:ite,kts:kte),    & ! INOUT  rain, number mixing ratio        #  kg-1
-         th_old(its:ite,kts:kte),     & ! INOUT  beginning of time step theta     K
          th(its:ite,kts:kte),         & ! INOUT  potential temperature            K
-         qv_old(its:ite,kts:kte),     & ! INOUT  beginning of time step qv        kg kg-1
          qv(its:ite,kts:kte),         & ! INOUT  water vapor mixing ratio         kg kg-1
          dtime,                       & ! IN     model time step                  s
          ice(its:ite,kts:kte),        & ! INOUT  ice, total mass mixing ratio     kg kg-1
@@ -1199,12 +1172,10 @@ end subroutine micro_p3_readnl
          icldm(its:ite,kts:kte),      & ! IN ice cloud fraction
          pratot(its:ite,kts:kte),     & ! OUT accretion of cloud by rain
          prctot(its:ite,kts:kte),     & ! OUT autoconversion of cloud by rain
-         tend_out(its:ite,kts:kte,:)  & ! OUT p3 microphysics tendencies
+         tend_out(its:ite,kts:kte,:), & ! OUT p3 microphysics tendencies
+         mu(its:ite,kts:kte),         & ! OUT Size distribution shape parameter for radiation
+         lambdac(its:ite,kts:kte)     & ! OUTSize distribution slope parameter for radiation
          )
-
-    ! UPDATE TH AND QV OLD FOR NEXT P3 STEP
-    th_old(:,:) = th(:,:) 
-    qv_old(:,:) = qv(:,:) 
 
     !MASSAGE OUTPUT TO FIT E3SM EXPECTATIONS
     !============= 
@@ -1293,57 +1264,58 @@ end subroutine micro_p3_readnl
    !! Effective radius for cloud liquid, and size parameters
    !! mu and lambdac.
    !!
-   mu = 0._rtype
-   lambdac = 0._rtype
-   rel = 10._rtype
+!   mu = 0._rtype
+!   lambdac = 0._rtype
+!   rel = 10._rtype
    !!
    !! Calculate ncic on the grid
    !!
-   ncic(:ngrdcol,top_lev:) = nc(:ngrdcol,top_lev:) / &
-        max(mincld,lcldm(:ngrdcol,top_lev:))
-
-   call size_dist_param_liq(&
-           micro_liq_props, &
-           icwmrst(:ngrdcol,top_lev:), & 
-           ncic(:ngrdcol,top_lev:), &
-           rho(:ngrdcol,top_lev:), &
-           mu(:ngrdcol,top_lev:), &
-           lambdac(:ngrdcol,top_lev:))
-
-   where (icwmrst(:ngrdcol,top_lev:) >= qsmall)
-      rel(:ngrdcol,top_lev:) = &
-           (mu(:ngrdcol,top_lev:) + 3._rtype) / &
-           lambdac(:ngrdcol,top_lev:)/2._rtype * 1.e6_rtype
-   elsewhere
-      ! Deal with the fact that size_dist_param_liq sets mu to -100
-      ! wherever there is no cloud.
-      mu(:ngrdcol,top_lev:) = 0._rtype
-   end where
+!   ncic(:ngrdcol,top_lev:) = nc(:ngrdcol,top_lev:) / &
+!        max(mincld,lcldm(:ngrdcol,top_lev:))
+!
+!   call size_dist_param_liq(&
+!           micro_liq_props, &
+!           icwmrst(:ngrdcol,top_lev:), & 
+!           ncic(:ngrdcol,top_lev:), &
+!           rho(:ngrdcol,top_lev:), &
+!           mu(:ngrdcol,top_lev:), &
+!           lambdac(:ngrdcol,top_lev:))
+!
+!   where (icwmrst(:ngrdcol,top_lev:) >= qsmall)
+!      rel(:ngrdcol,top_lev:) = &
+!           (mu(:ngrdcol,top_lev:) + 3._rtype) / &
+!           lambdac(:ngrdcol,top_lev:)/2._rtype * 1.e6_rtype
+!   elsewhere
+!      ! Deal with the fact that size_dist_param_liq sets mu to -100
+!      ! wherever there is no cloud.
+!      mu(:ngrdcol,top_lev:) = 0._rtype
+!   end where
    !!
    !! Effective radius and diameter for cloud ice
    !!
    
-   rei = 25._rtype
-
-   niic(:ngrdcol,top_lev:) = numice(:ngrdcol,top_lev:) / &
-        max(mincld,icldm(:ngrdcol,top_lev:))
-
-   call size_dist_param_basic( &
-           micro_ice_props, &
-           icimrst(:ngrdcol,top_lev:), &
-           niic(:ngrdcol,top_lev:), &
-           rei(:ngrdcol,top_lev:))
-
-   where (icimrst(:ngrdcol,top_lev:) >= qsmall)
-      rei(:ngrdcol,top_lev:) = &
-         1.5_rtype/rei(:ngrdcol,top_lev:) * 1.e6_rtype
-   elsewhere
-      rei(:ngrdcol,top_lev:) = 25._rtype
-   end where
-
+!   rei = 25._rtype
+!
+!   niic(:ngrdcol,top_lev:) = numice(:ngrdcol,top_lev:) / &
+!        max(mincld,icldm(:ngrdcol,top_lev:))
+!
+!   call size_dist_param_basic( &
+!           micro_ice_props, &
+!           icimrst(:ngrdcol,top_lev:), &
+!           niic(:ngrdcol,top_lev:), &
+!           rei(:ngrdcol,top_lev:))
+!
+!   where (icimrst(:ngrdcol,top_lev:) >= qsmall)
+!      rei(:ngrdcol,top_lev:) = &
+!         1.5_rtype/rei(:ngrdcol,top_lev:) * 1.e6_rtype
+!   elsewhere
+!      rei(:ngrdcol,top_lev:) = 25._rtype
+!   end where
+    rel = rel * 1.e6_rtype
+    rei = rei * 1.e6_rtype
     !cloud_rad_props needs ice effective diameter, which Kai calculates as below:
     !   dei = rei*diag_rhopo(i,k,iice)/rhows*2._rtype
-    !where rhopo is bulk ice density from table lookup (taken from f1pr16, here written as rhoi) and rhows=917.0 is a constant parameter.
+    !where rhopo is bulk ice density from table lookup (taken from f1pr16, here written as rhoi) and rhows=917.0 is a constant parameter. 
    dei = rei * rhoi/rhows * 2._rtype
 
    !!
@@ -1496,7 +1468,7 @@ end subroutine micro_p3_readnl
 
    ! Write p3 tendencies as output 
    ! warm-phase process rates
-   call outfld('P3_qrcon',  tend_out(:,:, 1), pcols, lchnk) 
+   call outfld('P3_qrcon',  mu, pcols, lchnk) ! AaronDonahue, this has been removed
    call outfld('P3_qcacc',  tend_out(:,:, 2), pcols, lchnk) 
    call outfld('P3_qcaut',  tend_out(:,:, 3), pcols, lchnk) 
    call outfld('P3_ncacc',  tend_out(:,:, 4), pcols, lchnk) 
@@ -1504,10 +1476,10 @@ end subroutine micro_p3_readnl
    call outfld('P3_ncslf',  tend_out(:,:, 6), pcols, lchnk) 
    call outfld('P3_nrslf',  tend_out(:,:, 7), pcols, lchnk) 
    call outfld('P3_ncnuc',  tend_out(:,:, 8), pcols, lchnk) 
-   call outfld('P3_qccon',  tend_out(:,:, 9), pcols, lchnk) 
+   call outfld('P3_qccon',  lambdac, pcols, lchnk)  ! AaronDonahue, this has been removed
    call outfld('P3_qcnuc',  tend_out(:,:,10), pcols, lchnk) 
    call outfld('P3_qrevp',  tend_out(:,:,11), pcols, lchnk) 
-   call outfld('P3_qcevp',  tend_out(:,:,12), pcols, lchnk) 
+   call outfld('P3_qcevp',  dei, pcols, lchnk) ! AaronDonahue, this has been removed
    call outfld('P3_nrevp',  tend_out(:,:,13), pcols, lchnk) 
    call outfld('P3_ncautr', tend_out(:,:,14), pcols, lchnk) 
    ! ice-phase process rate

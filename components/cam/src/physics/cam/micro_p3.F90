@@ -211,6 +211,7 @@ contains
 
     ! AaronDonahue: Switching to table ver 4 means switching to a constand mu_r,
     ! so this section is commented out.
+
     do i = 1,150              ! loop over lookup table values
 !       initlamr = 1./((real(i)*2.)*1.e-6 + 250.e-6)
 !
@@ -281,7 +282,7 @@ contains
           do kk = 1,10000
 
              dia = (real(kk)*dd-dd*0.5_rtype)*1.e-6_rtype  ! size bin [m]
-             amg = piov6*rhow*dia**3           ! mass [kg]  ! AaronDonahue: does this mean that density is hard-coded?  Changing 997 in this expression to rhow from p3_utils
+             amg = piov6*rhow*dia**3           ! mass [kg]  
              amg = amg*1000._rtype             ! convert [kg] to [g]
 
              !get fallspeed as a function of size [m s-1]
@@ -321,11 +322,11 @@ contains
 
   !==========================================================================================!
 
-  SUBROUTINE p3_main(qc,nc,qr,nr,th_old,th,qv_old,qv,dt,qitot,qirim,nitot,birim,ssat,   &
+  SUBROUTINE p3_main(qc,nc,qr,nr,th,qv,dt,qitot,qirim,nitot,birim,ssat,   &
        pres,dzq,npccn,naai,it,prt_liq,prt_sol,its,ite,kts,kte,diag_ze,diag_effc,     &
        diag_effi,diag_vmi,diag_di,diag_rhoi,log_predictNc, &
        pdel,exner,cmeiout,prain,nevapr,prer_evap,rflx,sflx,rcldm,lcldm,icldm,  &
-       pratot,prctot,p3_tend_out)
+       pratot,prctot,p3_tend_out,mu_c,lamc)
 
     !----------------------------------------------------------------------------------------!
     !                                                                                        !
@@ -358,8 +359,6 @@ contains
 
     real(rtype), intent(inout), dimension(its:ite,kts:kte)      :: qv         ! water vapor mixing ratio         kg kg-1
     real(rtype), intent(inout), dimension(its:ite,kts:kte)      :: th         ! potential temperature            K
-    real(rtype), intent(inout), dimension(its:ite,kts:kte)      :: th_old     ! beginning of time step value of theta K
-    real(rtype), intent(inout), dimension(its:ite,kts:kte)      :: qv_old     ! beginning of time step value of qv    kg kg-1
     real(rtype), intent(in),    dimension(its:ite,kts:kte)      :: pres       ! pressure                         Pa
     real(rtype), intent(in),    dimension(its:ite,kts:kte)      :: dzq        ! vertical grid spacing            m
     real(rtype), intent(in),    dimension(its:ite,kts:kte)      :: npccn      ! IN ccn activated number tendency kg-1 s-1
@@ -374,6 +373,8 @@ contains
     real(rtype), intent(out),   dimension(its:ite,kts:kte)      :: diag_vmi   ! mass-weighted fall speed of ice  m s-1
     real(rtype), intent(out),   dimension(its:ite,kts:kte)      :: diag_di    ! mean diameter of ice             m
     real(rtype), intent(out),   dimension(its:ite,kts:kte)      :: diag_rhoi  ! bulk density of ice              kg m-1
+    real(rtype), intent(out),   dimension(its:ite,kts:kte)      :: mu_c       ! Size distribution shape parameter for radiation
+    real(rtype), intent(out),   dimension(its:ite,kts:kte)      :: lamc       ! Size distribution slope parameter for radiation
 
     integer, intent(in)                                  :: its,ite    ! array bounds (horizontal)
     integer, intent(in)                                  :: kts,kte    ! array bounds (vertical)
@@ -404,15 +405,12 @@ contains
 
     real(rtype), dimension(its:ite,kts:kte) :: mu_r  ! shape parameter of rain
     real(rtype), dimension(its:ite,kts:kte) :: t     ! temperature at the beginning of the microhpysics step [K]
-    real(rtype), dimension(its:ite,kts:kte) :: t_old ! temperature at the beginning of the model time step [K]
 
     ! 2D size distribution and fallspeed parameters:
 
-    real(rtype), dimension(its:ite,kts:kte) :: lamc
     real(rtype), dimension(its:ite,kts:kte) :: lamr
 !    real(rtype), dimension(its:ite,kts:kte) :: lami
     real(rtype), dimension(its:ite,kts:kte) :: logn0r
-    real(rtype), dimension(its:ite,kts:kte) :: mu_c
 
     real(rtype), dimension(its:ite,kts:kte) :: nu
     real(rtype), dimension(its:ite,kts:kte) :: cdist
@@ -431,7 +429,6 @@ contains
     real(rtype) :: ncslf   ! change in cloud droplet number from self-collection  (Not in paper?)
     real(rtype) :: nrslf   ! change in rain number from self-collection  (Not in paper?)
     real(rtype) :: ncnuc   ! change in cloud droplet number from activation of CCN
-    real(rtype) :: qccon   ! cloud droplet condensation
     real(rtype) :: qcnuc   ! activation of cloud droplets from CCN
     real(rtype) :: qrevp   ! rain evaporation
     real(rtype) :: nrevp   ! change in rain number from evaporation
@@ -527,7 +524,7 @@ contains
     real(rtype)    :: f1pr16   ! mass-weighted mean particle density
 
 
-    !--These will be added as namelist parameters in the future
+    !--These will be added as namelist parameters in the future  ! AaronDonahue TODO: Make these namelist variables?
     logical, parameter :: debug_ON     = .false.  !.true. to switch on debugging checks/traps throughout code
     logical, parameter :: debug_ABORT  = .false.  !.true. will result in forced abort in s/r 'check_values'
 
@@ -583,7 +580,6 @@ contains
     ! causing energy conservation errors.
     inv_exner = 1._rtype/exner        !inverse of Exner expression, used when converting potential temp to temp
     t       = th    *inv_exner    !compute temperature from theta (value at beginning of microphysics step)
-    t_old   = th_old*inv_exner    !compute temperature from theta (value at beginning of model time step), AaronDonahue: Now that we are removing ssat do we need t_old?
     qv      = max(qv,0._rtype)        !clip water vapor to prevent negative values passed in (beginning of microphysics)
     ! AaronDonahue added this load of latent heat to be consistent with E3SM, since the inconsistentcy was causing water conservation errors.
     call get_latent_heat(its,ite,kts,kte,xxlv,xxls,xlf)
@@ -599,13 +595,6 @@ contains
 
        k_loop_1: do k = kbot,ktop,kdir
 
-          !-- To be deleted (moved to above)
-          ! !      !calculate old temperature from old value of theta
-          ! !        t_old(i,k) = th_old(i,k)*(pres(i,k)*1.e-5)**(rd*inv_cp)
-          ! !      !calculate current temperature from current theta
-          ! !        t(i,k) = th(i,k)*(pres(i,k)*1.e-5)**(rd*inv_cp)
-          !==
-
           !calculate some time-varying atmospheric variables
             !AaronDonahue - changed "rho" to be defined on nonhydrostatic
             !assumption, consistent with pressure based coordinate system
@@ -614,13 +603,9 @@ contains
             !can be made consistent with E3SM definition of latent heat
           rho(i,k)     = pdel(i,k)/dzq(i,k)/g  ! pres(i,k)/(rd*t(i,k))
           inv_rho(i,k) = 1._rtype/rho(i,k)
-          qvs(i,k)     = qv_sat(t_old(i,k),pres(i,k),0)
-          qvi(i,k)     = qv_sat(t_old(i,k),pres(i,k),1)
+          qvs(i,k)     = qv_sat(t(i,k),pres(i,k),0)
+          qvi(i,k)     = qv_sat(t(i,k),pres(i,k),1)
 
-          ! AaronDonahue: Removing qv_old since it is only needed for
-          ! super-saturation adj. which we no longer do.  Question: Do we still
-          ! need th_old?
-          ! TODO: Remove qv_old and th_old references in P3.
           sup(i,k)     = qv(i,k)/qvs(i,k)-1._rtype
           supi(i,k)    = qv(i,k)/qvi(i,k)-1._rtype
 
@@ -723,7 +708,7 @@ contains
           ! All microphysics tendencies will be computed as IN-CLOUD, they will be mapped back to cell-average later.
 
           ! initialize warm-phase process rates
-          qcacc   = 0._rtype;     qrevp   = 0._rtype;     qccon   = 0._rtype
+          qcacc   = 0._rtype;     qrevp   = 0._rtype;
           qcaut   = 0._rtype;
           ncacc   = 0._rtype;     ncnuc   = 0._rtype;     ncslf   = 0._rtype
           ncautc  = 0._rtype;     qcnuc   = 0._rtype;     nrslf   = 0._rtype
@@ -1092,7 +1077,7 @@ contains
 !AaronDonahue: We have effectively removed the following tendencies by replacing
 !this section with what is found below,
 !    qcevp
-!    qccon (note that for it=1 qccon is defined below commented section)
+!    qccon
 !    qrcon
 !AaronDonahue: and moved others to individual subroutines:
 !    qrevp has been moved to evaporate_sublimate_precip
@@ -1123,14 +1108,14 @@ contains
 
           dumqvs = qv_sat(t(i,k),pres(i,k),0)
           call evaporate_sublimate_precip( &
-                t(i,k), mu, qv(i,k), dumqvs, lcldm(i,k), rcldm(i,k),  &      ! INPUT
+                t(i,k), qv(i,k), dumqvs, lcldm(i,k), rcldm(i,k),  &          ! INPUT
                 qc_incld(i,k), qitot_incld(i,k), qr_incld(i,k), epsr, &      ! INPUT
                 qrevp)                                                       ! OUTPUT
           if (qr_incld(i,k).gt.qsmall)  nrevp = qrevp*(nr_incld(i,k)/qr_incld(i,k)) ! AaronDonahue, taken from previously removed section
 
           call ice_deposition_sublimation( &
-                t(i,k), qv(i,k), qitot(i,k), icldm(i,k), dumqvs, qvi(i,k), epsi, &  ! INPUT
-                berg, qidep, qisub)                                                 ! OUTPUT
+                t(i,k), qv(i,k), qitot_incld(i,k), icldm(i,k), dumqvs, qvi(i,k), epsi, &  ! INPUT
+                berg, qidep, qisub)                                                       ! OUTPUT
           if (qitot_incld(i,k).gt.qsmall) nisub = qisub*(nitot_incld(i,k)/qitot_incld(i,k)) ! AaronDonahue, taken from previously removed section
 
 444       continue
@@ -1185,22 +1170,6 @@ contains
             dum   = min(dum,(qv(i,k)-dumqvs)/ab)  ! limit overdepletion of supersaturation
             qcnuc = dum*odt
          endif
-
-          !................................................................
-          ! saturation adjustment to get initial cloud water
-          ! AaronDonahue: Do we need to get rid of this too?
-          ! This is only called once at the beginning of the simulation
-          ! to remove any supersaturation in the intial conditions
-
-          if (it.eq.1) then
-             dumt   = th(i,k)*inv_exner(i,k) !(pres(i,k)*1.e-5)**(rd*inv_cp)
-             dumqv  = qv(i,k)
-             dumqvs = qv_sat(dumt,pres(i,k),0)
-             dums   = dumqv-dumqvs
-             qccon  = dums/(1._rtype+xxlv(i,k)**2*dumqvs/(cp*rv*dumt**2))*odt
-             qccon  = max(0._rtype,qccon)
-             if (qccon.le.1.e-7_rtype) qccon = 0._rtype
-          endif
 
           !................
 
@@ -1342,7 +1311,6 @@ contains
           ! map warm-phase process rates to cell-avg
           qcacc   = qcacc*lr_cldm     ! Accretion of liquid to rain
           qrevp   = qrevp*rcldm(i,k)  ! Evaporation of rain
-          qccon   = qccon*lcldm(i,k)  ! Condensation of liquid
           qcaut   = qcaut*lcldm(i,k)  ! Autoconversion of liquid
           ncacc   = ncacc*lr_cldm     ! Number change due to accretion
           ncslf   = ncslf*lcldm(i,k)  ! Self collection occurs locally in liq. cloud
@@ -1372,7 +1340,7 @@ contains
           qidep   = qidep*icldm(i,k)  ! Vapor deposition to ice phase
           nrheti  = nrheti*rcldm(i,k) ! Change in number due to immersion freezing of rain
           nisub   = nisub*icldm(i,k)  ! Number change due to sublimation of ice
-          berg    = berg*icldm(i,k)   ! AaronDonahue, it's unclear to me what to scale berg by?
+          berg    = berg*il_cldm      ! Bergeron process 
             ! AaronDonahue: These variables are related to aerosol activation and their usage will be changed in a later PR.
           qinuc   = qinuc             ! Deposition and condensation-freezing nucleation, already cell-averaged
           ninuc   = ninuc             ! Number change due to deposition and condensation-freezing, already cell-averaged
@@ -1403,7 +1371,7 @@ contains
 
           ! cloud
           sinks   = (qcaut+qcacc+qccol+qcheti+qcshd+berg)*dt  !PMC remove ssat (added berg)
-          sources = qc(i,k) + (qccon+qcnuc)*dt
+          sources = qc(i,k) + (qcnuc)*dt
           if (sinks.gt.sources .and. sinks.ge.1.e-20_rtype) then
              ratio  = sources/sinks
              qcaut  = qcaut*ratio
@@ -1417,7 +1385,7 @@ contains
              !PMC 12/3/12: ratio is also frac of step w/ liquid.
              !thus we apply berg for "ratio" of timestep and vapor
              !deposition for the remaining frac of the timestep. 
-             qidep = qidep*(1._rtype-ratio) ! AaronDonahue: Is there any chance this could lead to unrealistic value since qidep isn't used to determine ratio in this case?
+             qidep = qidep*(1._rtype-ratio) 
 
           else
              qidep = 0._rtype !if not limiting Berg, must not have run out of qc. 
@@ -1437,7 +1405,7 @@ contains
           ! ice
           sinks   = (qisub+qimlt)*dt
           sources = qitot(i,k) + (qidep+qinuc+qrcol+qccol+  &
-               qrheti+qcheti+berg)*dt  !AaronDonahue, adding berg as a source following qcheti as a template for how to do this with qc -> qi tendencies
+               qrheti+qcheti+berg)*dt  
           if (sinks.gt.sources .and. sinks.ge.1.e-20_rtype) then
              ratio = sources/sinks
              qisub = qisub*ratio
@@ -1473,10 +1441,9 @@ contains
           endif
 
           dum             = (qrcol+qccol+qrheti+          &
-               qcheti+berg)*dt
-          qitot(i,k) = qitot(i,k) + (qidep+qinuc)*dt + dum
+               qcheti)*dt
+          qitot(i,k) = qitot(i,k) + (qidep+qinuc+berg)*dt + dum
           qirim(i,k) = qirim(i,k) + dum
-          ! AaronDonahue: How does berg impact birim?
           birim(i,k) = birim(i,k) + (qrcol*inv_rho_rimeMax+qccol/  &
                rhorime_c+(qrheti+     &
                qcheti)*inv_rho_rimeMax)*dt
@@ -1517,7 +1484,7 @@ contains
           !==
 
           !-- warm-phase only processes:
-          qc(i,k) = qc(i,k) + (-qcacc-qcaut+qcnuc+qccon)*dt
+          qc(i,k) = qc(i,k) + (-qcacc-qcaut+qcnuc)*dt
           qr(i,k) = qr(i,k) + (qcacc+qcaut-qrevp)*dt
 
           if (log_predictNc) then
@@ -1531,8 +1498,8 @@ contains
              nr(i,k) = nr(i,k) + (ncautr-nrslf-nrevp)*dt
           endif
 
-          qv(i,k) = qv(i,k) + (-qcnuc-qccon+qrevp)*dt
-          th(i,k) = th(i,k) + exner(i,k)*((qcnuc+qccon-qrevp)*xxlv(i,k)*    &
+          qv(i,k) = qv(i,k) + (-qcnuc+qrevp)*dt
+          th(i,k) = th(i,k) + exner(i,k)*((qcnuc-qrevp)*xxlv(i,k)*    &
                inv_cp)*dt
           !==
           ! AaronDonahue - Add extra variables needed from microphysics by E3SM:
@@ -1583,7 +1550,7 @@ contains
           p3_tend_out(i,k, 6) = ncslf   ! change in cloud droplet number from self-collection  (Not in paper?)
           p3_tend_out(i,k, 7) = nrslf   ! change in rain number from self-collection  (Not in paper?)
           p3_tend_out(i,k, 8) = ncnuc   ! change in cloud droplet number from activation of CCN
-          p3_tend_out(i,k, 9) = qccon   ! cloud droplet condensation
+          p3_tend_out(i,k, 9) = 0.0_rtype   ! cloud droplet condensation AaronDonahue: This needs to be removed
           p3_tend_out(i,k,10) = qcnuc   ! activation of cloud droplets from CCN
           p3_tend_out(i,k,11) = qrevp   ! rain evaporation
           p3_tend_out(i,k,12) = 0.0_rtype !qcevp   ! cloud droplet evaporation !AaronDonahue: This needs to be removed eventually
@@ -2607,6 +2574,7 @@ contains
     endif
 
     ! find location in mu_r space
+    ! since mu_r is now always constant, rdumjj = 2. and dumjj = 2 always
     rdumjj = mu_r+1._rtype
     rdumjj = max(rdumjj,1._rtype)
     rdumjj = min(rdumjj,10._rtype)
@@ -2752,79 +2720,6 @@ contains
   end subroutine get_rain_dsd2
 
   !===========================================================================================
-  subroutine get_ice_dsd2(qr,nr,mu_r,rdumii,dumii,lamr,mu_r_table,cdistr,logn0r,rcldm)
-
-    ! Computes and returns rain size distribution parameters
-
-    implicit none
-
-    !arguments:
-    real(rtype), dimension(:), intent(in)  :: mu_r_table
-    real(rtype),     intent(in)            :: qr,rcldm
-    real(rtype),     intent(inout)         :: nr
-    real(rtype),     intent(out)           :: rdumii,lamr,mu_r,cdistr,logn0r
-    integer,  intent(out)           :: dumii
-
-    !local variables:
-    real(rtype)                            :: inv_dum,lammax,lammin
-
-    !--------------------------------------------------------------------------
-
-    if (qr.ge.qsmall) then
-
-       ! use lookup table to get mu
-       ! mu-lambda relationship is from Cao et al. (2008), eq. (7)
-
-       ! find spot in lookup table
-       ! (scaled N/q for lookup table parameter space_
-       nr      = max(nr,nsmall)
-!       inv_dum = (qr/(cons1*nr*6._rtype))**thrd    ! Caclulate diamere
-
-       ! Apply constant mu_r:  Recall the switch to v4 tables means constant mu_r
-       mu_r = mu_r_constant
-       ! AaronDonahue: Comment out the variable mu_r calculation below.
-!       if (inv_dum.lt.282.e-6) then   ! If diameter is less than 282 microns
-!          mu_r = 8.282
-!       elseif (inv_dum.ge.282.e-6 .and. inv_dum.lt.502.e-6) then
-!          ! interpolate
-!          rdumii = (inv_dum-250.e-6)*1.e+6*0.5
-!          rdumii = max(rdumii,1.)
-!          rdumii = min(rdumii,150.)
-!          dumii  = int(rdumii)
-!          dumii  = min(149,dumii)
-!          mu_r   = mu_r_table(dumii)+(mu_r_table(dumii+1)-mu_r_table(dumii))*(rdumii-  &
-!               real(dumii))
-!       elseif (inv_dum.ge.502.e-6) then
-!          mu_r = 0.
-!       endif
-
-       lamr   = (cons1*nr*(mu_r+3._rtype)*(mu_r+2._rtype)*(mu_r+1._rtype)/(qr))**thrd  ! recalculate slope based on mu_r
-       lammax = (mu_r+1._rtype)*1.e+5_rtype   ! check for slope
-       lammin = (mu_r+1._rtype)*1250._rtype   ! set to small value since breakup is explicitly included (mean size 0.8 mm)
-
-       ! apply lambda limiters for rain
-       if (lamr.lt.lammin) then
-          lamr = lammin
-          nr   = exp(3._rtype*log(lamr)+log(qr)+log(gamma(mu_r+1._rtype))-log(gamma(mu_r+4._rtype)))/(cons1)
-       elseif (lamr.gt.lammax) then
-          lamr = lammax
-          nr   = exp(3._rtype*log(lamr)+log(qr)+log(gamma(mu_r+1._rtype))-log(gamma(mu_r+4._rtype)))/(cons1)
-       endif
-
-       cdistr  = nr*rcldm/gamma(mu_r+1._rtype)
-       logn0r  = log10(nr)+(mu_r+1._rtype)*log10(lamr)-log10(gamma(mu_r+1._rtype)) !note: logn0r is calculated as log10(n0r)
-
-    else
-
-       lamr   = 0._rtype
-       cdistr = 0._rtype
-       logn0r = 0._rtype
-
-    endif
-
-  end subroutine get_ice_dsd2
-
-  !===========================================================================================
   subroutine calc_bulkRhoRime(qi_tot,qi_rim,bi_rim,rho_rime)
 
     !--------------------------------------------------------------------------------
@@ -2956,7 +2851,7 @@ contains
 
     !Local variables:
     real(rtype), parameter :: T_low  = 173._rtype
-    real(rtype), parameter :: T_high = 323._rtype
+    real(rtype), parameter :: T_high = 350._rtype
     real(rtype), parameter :: Q_high = 40.e-3_rtype
     real(rtype), parameter :: N_high = 1.e+20_rtype
     real(rtype), parameter :: B_high = Q_high*1.e-3_rtype

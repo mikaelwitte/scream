@@ -100,8 +100,6 @@ end interface
 
 type(MicroHydrometeorProps), public :: micro_liq_props
 type(MicroHydrometeorProps), public :: micro_ice_props
-type(MicroHydrometeorProps), public :: micro_rain_props
-type(MicroHydrometeorProps), public :: micro_snow_props
 
 ! particle mass-diameter relationship
 ! currently we assume spherical particles for cloud ice/snow
@@ -284,9 +282,6 @@ end interface var_coef
     ice_lambda_bounds = 1._rtype/[2._rtype*400.e-6_rtype, 10.e-6_rtype] !! dcs 400.e-6
     micro_ice_props = MicroHydrometeorProps(rhoi, dsph, &
          ice_lambda_bounds, min_mean_mass_ice)
-  
-    micro_rain_props = MicroHydrometeorProps(rhow, dsph, lam_bnd_rain)
-    micro_snow_props = MicroHydrometeorProps(rhosn, dsph, lam_bnd_snow) !AaronDonahue, do we need this, there is no snow in P3
     
     return
     end subroutine micro_p3_utils_init
@@ -597,7 +592,7 @@ end subroutine evaporate_sublimate_precip
 !__________________________________________________________________________________________!
 !                                                                                          !
 !__________________________________________________________________________________________!
-subroutine ice_deposition_sublimation(t, qv, qitot, &
+subroutine ice_deposition_sublimation(t, qv, qitot_incld, &
                                                 icldm, qvl, qvi, epsi,  &
                                                 berg, qidep, qisub)
 
@@ -614,7 +609,7 @@ subroutine ice_deposition_sublimation(t, qv, qitot, &
   !===============================================
   real(rtype), intent(in) :: t     !temperature (K)
   real(rtype), intent(in) :: qv    !cell-ave vapor mixing ratio (kg/kg)
-  real(rtype), intent(in) :: qitot !cell-ave ice mixing ratio (kg/kg)
+  real(rtype), intent(in) :: qitot_incld !cell-ave ice mixing ratio (kg/kg)
   real(rtype), intent(in) :: icldm !ice cloud fraction (assumed = liq cld frac)
   real(rtype), intent(in) :: qvl   !saturation mixing ratio wrt liquid  (kg/kg)
   real(rtype), intent(in) :: qvi   !saturation mixing ratio wrt ice  (kg/kg)
@@ -629,22 +624,14 @@ subroutine ice_deposition_sublimation(t, qv, qitot, &
   !INTERNAL VARS:
   !===============================================
   real(rtype) :: ab      !correction for condensational heating reducing dqs/dT
-  real(rtype) :: qiic    !in-cloud qi
 
-  if (qitot>=qsmall) then
-
-     !GET IN-CLOUD qi, ni
-     !===============================================
-     qiic = qitot/icldm
+  if (qitot_incld>=qsmall) then
 
      !Compute linearized condensational heating correction
      ab=calc_ab(t, qvi, xxls)
 
      !Compute deposition/sublimation
      qidep = epsi/ab*(qv - qvi)
-
-     !Make this a grid-averaged quantity
-!     qidep=qidep*icldm  !AaronDonahue: Can't we just leave this as an incloud quantity?
 
      !Split into deposition or sublimation.
      if (t < zerodegc .and. qidep>0._rtype) then
@@ -657,7 +644,6 @@ subroutine ice_deposition_sublimation(t, qv, qitot, &
 
      !sublimation occurs @ any T. Not so for berg.
      if (t < zerodegc) then
-
         !Compute bergeron rate assuming cloud for whole step.
         berg = max(epsi/ab*(qvl - qvi), 0._rtype)
      else !T>frz
