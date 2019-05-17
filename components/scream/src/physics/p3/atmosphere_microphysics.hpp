@@ -4,6 +4,7 @@
 // Include headers for scream atmospheric process
 #include "share/atmosphere_process.hpp"
 #include "share/parameter_list.hpp"
+#include "share/field/field_repository.hpp"
 
 #include <string>
 
@@ -44,8 +45,11 @@ public:
   // The communicator used by the physics
   const Comm& get_comm () { return m_physics_comm; }
 
+  // Get the grid from the grids manager
+  void set_grid (const std::shared_ptr<const GridsManager> grids_manager);
+
   // The three main interfaces:
-  void initialize (const std::shared_ptr<const GridsManager> grids_manager);
+  void initialize ();
   void run        (/* some inputs */);
   void finalize   (/* some inputs */);
 
