@@ -25,6 +25,7 @@ module radiation
 
    ! Use my assertion routines to perform sanity checks
    use assertions, only: assert, assert_valid, assert_range
+   use radiation_utils, only: clip_values
 
    use radiation_state, only: ktop, kbot, nlev_rad
    use radiation_utils, only: compress_day_columns, expand_day_columns, &
@@ -1373,6 +1374,19 @@ contains
                          pint(1:nday,1:nlev_rad+1), &
                          col_indices=day_indices(1:nday))
 
+      ! Make sure temperatures are within range of look-up tables, and clip if
+      ! outside valid range
+      call clip_values( &
+         tmid(1:nday,1:nlev_rad  ), &
+         k_dist_sw%get_temp_min(), k_dist_sw%get_temp_max(), &
+         varname="tmid", warn=.true. &
+      )
+      call clip_values( &
+         tint(1:nday,1:nlev_rad+1), &
+         k_dist_sw%get_temp_min(), k_dist_sw%get_temp_max(), &
+         varname="tint", warn=.true. &
+      )
+
       ! Get albedo. This uses CAM routines internally and just provides a
       ! wrapper to improve readability of the code here.
       call set_albedo(cam_in, albedo_direct(1:nswbands,1:ncol), albedo_diffuse(1:nswbands,1:ncol))
@@ -1562,6 +1576,19 @@ contains
                          pmid(1:ncol,1:nlev_rad), &
                          pint(1:ncol,1:nlev_rad+1))
        
+      ! Make sure temperatures are within range of look-up tables, and clip if
+      ! outside valid range
+      call clip_values( &
+         tmid(1:ncol,1:nlev_rad  ), &
+         k_dist_sw%get_temp_min(), k_dist_sw%get_temp_max(), &
+         varname="tmid", warn=.true. &
+      )
+      call clip_values( &
+         tint(1:ncol,1:nlev_rad+1), &
+         k_dist_sw%get_temp_min(), k_dist_sw%get_temp_max(), &
+         varname="tint", warn=.true. &
+      )
+
       ! Set surface emissivity to 1 here. There is a note in the RRTMG
       ! implementation that this is treated in the land model, but the old
       ! RRTMG implementation also sets this to 1. This probably does not make
