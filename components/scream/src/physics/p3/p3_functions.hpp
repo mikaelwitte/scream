@@ -367,10 +367,11 @@ struct Functions
     const Smask& qr_gt_small, const Spack& qr, Spack& nr, Spack& mu_r,
     Spack& lamr, Spack& cdistr, Spack& logn0r, const Spack& rcldm);
 
+  // Compute conversion of cloud water to rain water due to droplet growth
   KOKKOS_FUNCTION
   static void cloud_water_autoconversion(const Spack& rho,  const Spack& qc_incld, const Spack& nc_incld,
     Spack& qcaut, Spack& ncautc, Spack& ncautr);
-
+  
   //--------------------------------------------------------------------------------
   //  Calculates and returns the bulk rime density from the prognostic ice variables
   //  and adjusts qirim and birim appropriately.
@@ -426,8 +427,16 @@ struct Functions
                                   const Spack& qirim_incld, const Spack& qitot_incld,
                                   const Spack& nitot_incld, Spack& nislf);
 
+  //get number and mass tendencies of melting ice
+  KOKKOS_FUNCTION
+  static void ice_melting(const Spack& rho, const Spack& t, const Spack& pres, const Spack& rhofaci,
+	      const Spack& f1pr05, const Spack& f1pr14, const Spack& xxlv, const Spack& xlf, 
+	      const Spack& dv, const Spack& sc, const Spack& mu, const Spack& kap, 
+	      const Spack& qv, const Spack& qitot_incld, const Spack& nitot_incld,
+	      Spack& qimlt, Spack& nimlt)
+  
 };
-
+  
 template <typename ScalarT, typename DeviceT>
 constexpr ScalarT Functions<ScalarT, DeviceT>::P3C::lookup_table_1a_dum1_c;
 
@@ -455,6 +464,7 @@ void init_tables_from_f90_c(Real* vn_table_data, Real* vm_table_data, Real* mu_t
 # include "p3_functions_rain_sed_impl.hpp"
 # include "p3_functions_update_prognostics_impl.hpp"
 # include "p3_functions_ice_collection_impl.hpp"
+# include "p3_functions_ice_melting_impl.hpp"
 #endif
 
 #endif
