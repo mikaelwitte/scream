@@ -38,6 +38,8 @@ void get_rain_dsd2_c(Real qr, Real* nr, Real* mu_r, Real* lamr, Real* cdistr, Re
 
 void cloud_water_autoconversion_c(Real rho, Real qc_incld, Real nc_incld, Real* qcaut, Real* ncautc, Real* ncautr);
 
+  void ice_melting_c(Real rho,Real t,Real pres,Real rhofaci,Real f1pr05,Real f1pr14,Real xxlv,Real xlf,Real dv,Real sc,Real mu,Real kap,Real qv,Real qitot_incld, Real nitot_incld,Real* qimlt,Real* nimlt);
+  
 void calc_first_order_upwind_step_c(Int kts, Int kte, Int kdir, Int kbot, Int k_qxtop, Real dt_sub, Real* rho, Real* inv_rho, Real* inv_dzq, Int num_arrays, Real** fluxes, Real** vs, Real** qnx);
 
 void generalized_sedimentation_c(Int kts, Int kte, Int kdir, Int k_qxtop, Int* k_qxbot, Int kbot, Real Co_max,
@@ -1243,6 +1245,29 @@ void cloud_water_autoconversion_f(
   *ncautc_ = t_h(1);
   *ncautr_ = t_h(2);
 }
+
+void ice_melting_f(Real rho_,Real t_,Real pres_,Real rhofaci_,Real f1pr05_,Real f1pr14_,Real xxlv_,Real xlf_,Real dv_,Real sc_,Real mu_,Real kap_,Real qv_,Real qitot_incld_,Real nitot_incld_,Real* qimlt_,Real* nimlt_){
+  using P3F = Functions<Real, DefaultDevice>;
+
+typename P3F::view_1d<Real> t_d("t_h", 2);
+auto t_h = Kokkos::create_mirror_view(t_d);
+Real local_qimlt = *qimlt_;
+Real local_nimlt = *nimlt_;
+
+Kokkos::parallel_for(1, KOKKOS_LAMBDA(const Int&) {
+    typename P3F::Spack rho(rho_), t(t_), pres(pres_), rhofaci(rhofaci_),f1pr05(f1pr05_), f1pr14(f1pr14_), xxlv(xxlv_), xlf(xlf_),dv(dv_), sc(sc_), mu(mu_), kap(kap_),qv(qv_), qitot_incld(qitot_incld_), nitot_incld(nitot_incld_), qimlt(local_qimlt), nimlt(local_nimlt);
+    P3F::ice_melting(rho,t,pres,rhofaci,f1pr05,f1pr14,xxlv,xlf,dv,sc,mu,kap,qv,qitot_incld,nitot_incld,qimlt,nimlt);
+
+    t_d(0) = qimlt[0];
+    t_d(1) = nimlt[0];
+
+  });
+ Kokkos::deep_copy(t_h, t_d);
+
+ *qimlt_ = t_h(0);
+ *nimlt_ = t_h(1);
+}
+  
 
 void calc_bulk_rho_rime_f(Real qi_tot_, Real* qi_rim_, Real* bi_rim_, Real* rho_rime_)
 {

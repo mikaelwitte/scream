@@ -2239,14 +2239,18 @@ end subroutine ice_self_collection
 
 
 subroutine ice_melting(rho,t,pres,rhofaci,    &
-f1pr05,f1pr14,xxlv,xlf,dv,sc,mu,kap,qv,qitot_incld,nitot_incld,    &
-           qimlt,nimlt)
+     f1pr05,f1pr14,xxlv,xlf,dv,sc,mu,kap,qv,qitot_incld,nitot_incld,    &
+     qimlt,nimlt)
    ! melting
    ! need to add back accelerated melting due to collection of ice mass by rain (pracsw1)
    ! note 'f1pr' values are normalized, so we need to multiply by N
    ! currently enhanced melting from collision is neglected
    ! include RH dependence
 
+#ifdef SCREAM_CONFIG_IS_CMAKE
+  use micro_p3_iso_f, only: ice_melting_f, cxx_pow
+#endif
+  
    implicit none
 
    real(rtype), intent(in) :: rho
@@ -2270,10 +2274,18 @@ f1pr05,f1pr14,xxlv,xlf,dv,sc,mu,kap,qv,qitot_incld,nitot_incld,    &
 
    real(rtype) :: qsat0
 
+#ifdef SCREAM_CONFIG_IS_CMAKE
+   if (use_cxx) then
+      call ice_melting_f(rho,t,pres,rhofaci,f1pr05,f1pr14,xxlv,xlf,dv, &
+           sc,mu,kap,qv,qitot_incld,nitot_incld,qimlt,nimlt)
+      return
+   endif
+#endif
+   
    if (qitot_incld .ge.qsmall .and. t.gt.zerodegc) then
       qsat0 = 0.622_rtype*e0/(pres-e0)
 
-      qimlt = ((f1pr05+f1pr14*sc**thrd*(rhofaci*rho/mu)**0.5_rtype)*((t-   &
+      qimlt = ((f1pr05+f1pr14*bfb_pow(sc,thrd)*bfb_pow(rhofaci*rho/mu,0.5_rtype))*((t-   &
       zerodegc)*kap-rho*xxlv*dv*(qsat0-qv))*2._rtype*pi/xlf)*nitot_incld
 
 

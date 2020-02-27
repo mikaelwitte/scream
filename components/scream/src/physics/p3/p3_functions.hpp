@@ -427,7 +427,7 @@ struct Functions
                                   const Spack& qirim_incld, const Spack& qitot_incld,
                                   const Spack& nitot_incld, Spack& nislf);
 
-  //get number and mass tendencies of melting ice
+  //get number and mass tendencies due to melting ice
   KOKKOS_FUNCTION
   static void ice_melting(const Spack& rho, const Spack& t, const Spack& pres, const Spack& rhofaci,
 			  const Spack& f1pr05, const Spack& f1pr14, const Spack& xxlv, const Spack& xlf, 
