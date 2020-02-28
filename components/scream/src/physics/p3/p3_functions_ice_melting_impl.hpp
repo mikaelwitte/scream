@@ -15,6 +15,38 @@ void Functions<S,D>
 	      const Spack& qv, const Spack& qitot_incld, const Spack& nitot_incld,
 	      Spack& qimlt, Spack& nimlt)
 {
+  // Notes Left over from WRF Version:
+  // need to add back accelerated melting due to collection of ice mass by rain (pracsw1)
+  // note 'f1pr' values are normalized, so we need to multiply by N
+  // currently enhanced melting from collision is neglected
+  // include RH dependence
+
+  constexpr Scalar qsmall = C::QSMALL;
+  constexpr Scalar tmelt = C::Tmelt;
+
+  //Find cells above freezing AND which have ice
+  const auto has_melt_qi = (qitot_incld >= qsmall)&&(t > tmelt);
+
+  if (has_melt_qi.any()){
+
+    //PMC qv_sat from math_impl.hpp seems to match hardcoded formula from F90 I'm swapping in C++ ver.
+    //    Note that qsat0 should be with respect to liquid. Confirmed F90 code did this.
+    //PMC tmelt is scalar and pres is Spack - will promotion work?
+    const auto qsat0 = qv_sat(tmelt, pres, false) //last false means NOT saturation w/ respect to ice.
+      
+
+      qimlt.set(has_melt_qi, ( (f1pr05+f1pr14*pow(sc,thrd)*pow(rhofaci*rho/mu,0.5))
+			       *((t-zerodegc)*kap-rho*xxlv*dv*(qsat0-qv))
+			       *2.0*pi/xlf)*nitot_incld )
+
+      //need to make sure qimlt is always negative somehow. need to change the next line.
+      qimlt = max(qimlt,0._rtype)
+
+      //Reduce ni in proportion to decrease in qi mass.
+      nimlt.set(has_melt_qi, qimlt*(nitot_incld/qitot_incld) )
+      }
+
+  
 }
 
 } // namespace p3
