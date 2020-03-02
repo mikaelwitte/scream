@@ -869,6 +869,15 @@ contains
           qv(i,k),qitot_incld(i,k),nitot_incld(i,k),&
                qimlt,nimlt)
 
+          !Output data for writing unit test
+          !write(iulog,*) '------------------------------------'
+          !write(iulog, 1000) rho(i,k),t(i,k),pres(i,k),rhofaci(i,k),&
+          !     f1pr05,f1pr14,xxlv(i,k),xlf(i,k),dv,sc,mu,kap,&
+          !     qv(i,k),qitot_incld(i,k),nitot_incld(i,k),&
+          !     qimlt,nimlt
+          !1000 format (17E10.3)
+          !write(iulog,*) '------------------------------------'
+
           !............................................................
           ! calculate wet growth
           call ice_cldliq_wet_growth(rho(i,k),t(i,k),pres(i,k),rhofaci(i,k),&
