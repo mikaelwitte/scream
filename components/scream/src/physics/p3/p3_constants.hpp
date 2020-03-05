@@ -105,8 +105,8 @@ constexpr Scalar Constants<Scalar>::Tmelt;
 template <typename Scalar>
 constexpr Scalar Constants<Scalar>::Tol;
 
-template <typename Scalar>
-constexpr Scalar Constants<Scalar>::Pi;
+  //template <typename Scalar>
+  //constexpr Scalar Constants<Scalar>::Pi;
   
 } // namespace p3
 } // namespace scream

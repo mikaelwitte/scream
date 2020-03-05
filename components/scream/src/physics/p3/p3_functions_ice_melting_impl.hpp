@@ -21,20 +21,24 @@ void Functions<S,D>
   // currently enhanced melting from collision is neglected
   // include RH dependence
 
+  const auto Pi = C::Pi;
+  const auto QSMALL = C::QSMALL;
+  const auto Tmelt = C::Tmelt;
+  
   //Find cells above freezing AND which have ice
-  const auto has_melt_qi = (qitot_incld >= C::QSMALL ) && (t > C::Tmelt);
+  const auto has_melt_qi = (qitot_incld >= QSMALL ) && (t > Tmelt);
 
   if (has_melt_qi.any()){
 
     //PMC qv_sat from math_impl.hpp seems to match hardcoded formula from F90 I'm swapping in C++ ver.
     //    Note that qsat0 should be with respect to liquid. Confirmed F90 code did this.
-    //PMC C::Tmelt is scalar and pres is Spack... does Spack(C::Tmelt) work correctly?
-    const auto qsat0 = qv_sat(Spack(C::Tmelt), pres, false); //last false means NOT saturation w/ respect to ice.
+    //PMC Tmelt is scalar and pres is Spack... does Spack(Tmelt) work correctly?
+    const auto qsat0 = qv_sat(Spack(Tmelt), pres, false); //last false means NOT saturation w/ respect to ice.
       
 
     qimlt.set(has_melt_qi, ( (f1pr05+f1pr14*pack::cbrt(sc)*pack::sqrt(rhofaci*rho/mu))
-			     *((t-C::Tmelt)*kap-rho*xxlv*dv*(qsat0-qv))
-			     *2.0* C::Pi /xlf)*nitot_incld );
+			     *((t-Tmelt)*kap-rho*xxlv*dv*(qsat0-qv))
+			     *2.0* Pi /xlf)*nitot_incld );
 
     //make sure qimlt is always negative
     qimlt = pack::max(qimlt,0.0);
