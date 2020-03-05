@@ -105,16 +105,16 @@ static void ice_melting_bfb(){
 
     });
 
-    // Sync back to host
-    Kokkos::deep_copy(IceMelt_host, IceMelt_device);
+  // Sync back to host
+  Kokkos::deep_copy(IceMelt_host, IceMelt_device);
 
-    // Validate results
-    for (Int s = 0; s < Spack::n; ++s) {
-       REQUIRE(IceMelt[s].qimlt == IceMelt_host(s).qimlt);
-       REQUIRE(IceMelt[s].nimlt == IceMelt_host(s).nimlt);
-    }
+  // Validate results
+  for (Int s = 0; s < Spack::n; ++s) {
+      REQUIRE(IceMelt[s].qimlt == IceMelt_host(s).qimlt);
+      REQUIRE(IceMelt[s].nimlt == IceMelt_host(s).nimlt);
+  }
 }; // TestP3IceMelting
-
+  
 }; // UnitWrap
   
 } // namespace unit_test
