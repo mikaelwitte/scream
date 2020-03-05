@@ -319,6 +319,38 @@ extern "C"{
 
 ///////////////////////////////////////////////////////////////////////////////
 
+struct IceMeltingData
+{
+  // inputs
+  Real rho;
+  Real t;
+  Real pres;
+  Real rhofaci;
+  Real f1pr05;
+  Real f1pr14;
+  Real xxlv;
+  Real xlf;
+  Real dv;
+  Real sc;
+  Real mu;
+  Real kap;
+  Real qv;
+  Real qitot_incld;
+  Real nitot_incld;
+
+  // output
+  Real qimlt;
+  Real nimlt;
+};
+
+void ice_melting(IceMeltingData& d);
+extern "C"{
+
+  void ice_melting_f(Real rho,Real t,Real pres,Real rhofaci,Real f1pr05,Real f1pr14,Real xxlv,Real xlf,Real dv,Real sc,Real mu,Real kap,Real qv,Real qitot_incld,Real nitot_incld,Real* qimlt,Real* nimlt);
+}
+ 
+///////////////////////////////////////////////////////////////////////////////
+
 struct GetCloudDsd2Data
 {
   // Inputs
