@@ -42,13 +42,13 @@ void Functions<S,D>
 
     //make sure qimlt is always negative
     qimlt = pack::max(qimlt,0.0);
-      
+    
     //Reduce ni in proportion to decrease in qi mass. Prev line makes sure it always has the right sign.
     nimlt.set(has_melt_qi, qimlt*(nitot_incld/qitot_incld) );
-      }
+  }
   
 }
-
+  
 } // namespace p3
 } // namespace scream
 
