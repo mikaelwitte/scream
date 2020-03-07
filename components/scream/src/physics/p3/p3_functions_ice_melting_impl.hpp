@@ -32,9 +32,9 @@ void Functions<S,D>
 
     //PMC qv_sat from math_impl.hpp seems to match hardcoded formula from F90 I'm swapping in C++ ver.
     //    Note that qsat0 should be with respect to liquid. Confirmed F90 code did this.
-    //PMC Tmelt is scalar and pres is Spack... does Spack(Tmelt) work correctly?
-    const auto qsat0 = qv_sat(Spack(Tmelt), pres, false); //last false means NOT saturation w/ respect to ice.
-      
+    //const auto qsat0 = qv_sat(Spack(Tmelt), pres, false); //last false means NOT saturation w/ respect to ice.
+    const auto e0 = polysvp1(Spack(Tmelt), 0);
+    const auto qsat0 = 0.622 *e0/(pres-e0);
 
     qimlt.set(has_melt_qi, ( (f1pr05+f1pr14*pack::cbrt(sc)*pack::sqrt(rhofaci*rho/mu))
 			     *((t-Tmelt)*kap-rho*xxlv*dv*(qsat0-qv))
