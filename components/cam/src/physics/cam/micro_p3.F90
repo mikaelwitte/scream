@@ -2297,7 +2297,7 @@ f1pr05,f1pr14,xxlv,xlf,dv,sc,mu,kap,qv,qitot_incld,nitot_incld,    &
    
    if (qitot_incld .ge.qsmall .and. t.gt.zerodegc) then
       qsat0 = 0.622_rtype*e0/(pres-e0)
-
+      
       qimlt = ((f1pr05+f1pr14*bfb_cbrt(sc)*bfb_sqrt(rhofaci*rho/mu))*((t-   &
       zerodegc)*kap-rho*xxlv*dv*(qsat0-qv))*2._rtype*pi/xlf)*nitot_incld
 
