@@ -35,14 +35,14 @@ void Functions<S,D>
 
     //const auto qsat0 = qv_sat(Spack(Tmelt), pres, false); //last false means NOT saturation w/ respect to ice.
     const auto e0 = polysvp1(Spack(Tmelt), 0);
-    const auto qsat0 = 0.622 *e0/(pres-e0);n
+    const auto qsat0 = 0.622 *e0/(pres-e0);
 
     qimlt.set(has_melt_qi, ( (f1pr05+f1pr14*pack::cbrt(sc)*pack::sqrt(rhofaci*rho/mu))
 			     *((t-Tmelt)*kap-rho*xxlv*dv*(qsat0-qv))
-			     *2.0* Pi /xlf)*nitot_incld );
+			     *sp(2.0)* Pi /xlf)*nitot_incld );
 
     //make sure qimlt is always negative
-    qimlt = pack::max(qimlt,0.0);
+    qimlt = pack::max(qimlt,sp(0.0));
     
     //Reduce ni in proportion to decrease in qi mass. Prev line makes sure it always has the right sign.
     nimlt.set(has_melt_qi, qimlt*(nitot_incld/qitot_incld) );
