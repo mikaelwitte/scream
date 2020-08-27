@@ -51,6 +51,7 @@ contains
                  dry_v_out,   moist_v_out,                         & ! output: updraft properties for diagnostics
                               moist_qc_out,                        & ! output: updraft properties for diagnostics
                  ae_out, aw_out,                                   & ! output: variables needed for  diffusion solver
+                 awthv_out,                                        & ! output: variable needed for total wthv
                  awthl_out, awqt_out,                              & ! output: variables needed for  diffusion solver
                  awql_out, awqi_out,                               & ! output: variables needed for  diffusion solver
                  awu_out, awv_out)                                   ! output: variables needed for  diffusion solver
@@ -89,7 +90,7 @@ contains
               dry_u_out,  moist_u_out,  dry_v_out,   moist_v_out,    moist_qc_out
   ! outputs - variables needed for diffusion solver
        real(rtype),dimension(shcol,nzi), intent(out) :: &
-              ae_out,aw_out,awthl_out,awqt_out,awql_out,awqi_out,awu_out,awv_out
+              ae_out,aw_out,awthv_out,awthl_out,awqt_out,awql_out,awqi_out,awu_out,awv_out
   ! outputs - flux diagnostics
        !real(rtype),dimension(shcol,nzi), intent(out) :: thlflx_out, qtflx_out
 
@@ -102,7 +103,7 @@ contains
        real(rtype), dimension(shcol,nzi) :: dry_a, moist_a, dry_w, moist_w, &
                                    dry_qt, moist_qt, dry_thl, moist_thl, &
                                    dry_u, moist_u, dry_v, moist_v, moist_qc
-       real(rtype), dimension(shcol,nzi) :: ae, aw, awthl, awqt, awql, awqi, awu, awv
+       real(rtype), dimension(shcol,nzi) :: ae, aw, awthv, awthl, awqt, awql, awqi, awu, awv
        !real(rtype), dimension(shcol,nzi) :: thlflx, qtflx
 
   ! sums over all plumes
@@ -205,6 +206,7 @@ contains
   ! outputs - variables needed for solver
      aw        = 0._rtype
      ! aws       = 0._rtype
+     awthv     = 0._rtype
      awthl     = 0._rtype
      awqt      = 0._rtype
      awqv      = 0._rtype
@@ -258,7 +260,7 @@ contains
          enddo
 
          ! get Poisson P(dz/L0)
-         call Poisson( 1, nz, 1, nup, entf, enti)
+         call Poisson( 2, nz, 1, nup, entf, enti)
 
          ! entrainment: Ent=Ent0/dz*P(dz/L0)
          do i=1,nup
@@ -420,6 +422,7 @@ contains
              awv (j,k) = awv (j,k) + upa(k,i)*upw(k,i)*upv(k,i)
              !aws (k) = aws (k) + upa(k,i)*upw(k,i)*upth(k,i)*cpair
              !aws (k) = aws (k) + upa(k,i)*upw(k,i)*ups(k,i)
+             awthv(j,k)= awthv(j,k)+ upa(k,i)*upw(k,i)*upthv(k,i) 
              awthl(j,k)= awthl(j,k)+ upa(k,i)*upw(k,i)*upthl(k,i) !*cpair/iexh
              awth(j,k) = awth(j,k) + upa(k,i)*upw(k,i)*upth(k,i) !*cpair/iexh
              awqt(j,k) = awqt(j,k) + upa(k,i)*upw(k,i)*upqt(k,i)
@@ -463,6 +466,7 @@ contains
 
        ae_out(:,nzi-k+1) = ae(:,k)
        aw_out(:,nzi-k+1) = aw(:,k)
+       awthv_out(:,nzi-k+1) = awthv(:,k)
        awthl_out(:,nzi-k+1) = awthl(:,k)
        awqt_out(:,nzi-k+1) = awqt(:,k)
        awql_out(:,nzi-k+1) = awql(:,k)
