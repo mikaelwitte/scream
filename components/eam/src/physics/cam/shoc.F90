@@ -15,6 +15,7 @@ module shoc
   use physics_utils, only: rtype, rtype8, itype, btype
   use scream_abortutils, only: endscreamrun
   use edmf, only: integrate_mf, init_random_seed, calc_mf_vertflux, compute_tmpi3
+  use spmd_utils,     only: masterproc
 
 ! Bit-for-bit math functions.
 #ifdef SCREAM_CONFIG_IS_CMAKE
@@ -200,12 +201,18 @@ subroutine shoc_main ( &
      uw_sec, vw_sec, w3,&                 ! Output (diagnostic)
      wqls_sec, brunt, shoc_ql2,&          ! Output (diagnostic)
      wthv_sec_tot, &                      ! EDMF output (diagnostic)
-     mf_dry_a, mf_moist_a, mf_dry_w, mf_moist_w,&        ! EDMF input/output
-     mf_dry_qt, mf_moist_qt, mf_dry_thl, mf_moist_thl,&  ! EDMF input/output
-     mf_dry_u, mf_moist_u, mf_dry_v, mf_moist_v,&        ! EDMF input/output
-     mf_moist_qc, mf_thlflx, mf_qtflx,&                  ! EDMF input/output
-     s_ae, s_aw, s_awthv, s_awthl, s_awqt,&              ! EDMF input/output
-     s_awql, s_awqi, s_awu, s_awv)                       ! EDMF input/output
+     mf_dry_a, mf_moist_a,&               ! EDMF input/output
+     mf_dry_w, mf_moist_w,&               ! EDMF input/output
+     mf_dry_qt, mf_moist_qt,&             ! EDMF input/output
+     mf_dry_thl, mf_moist_thl,&           ! EDMF input/output
+     mf_dry_u, mf_moist_u,&               ! EDMF input/output 
+     mf_dry_v, mf_moist_v,&               ! EDMF input/output
+               mf_moist_qc,&              ! EDMF input/output
+     mf_thlflx, mf_qtflx,&                ! EDMF input/output
+     s_ae, s_aw,&                         ! EDMF input/output
+     s_awthv, s_awthl, s_awqt,&           ! EDMF input/output
+     s_awql, s_awqi,&                     ! EDMF input/output
+     s_awu, s_awv)                        ! EDMF input/output
 
   implicit none
 
@@ -438,9 +445,10 @@ subroutine shoc_main ( &
        brunt,shoc_mix)                      ! Output
 
     ! If using EDMF plumes, diagnose plume properties here
-    nup = 100
+    nup = 25
+    if (masterproc) print *,'before edmf',t
     if (do_edmf) then
-       do_mfdif = .true.
+       do_mfdif = .false.
        call init_random_seed
        call integrate_mf(&
                shcol, nlev, nlevi, dtime,&               ! Input
@@ -491,12 +499,17 @@ subroutine shoc_main ( &
 
     ! Calculate the total buoyancy flux: wthv_tot = s_ae*wthv_sec + s_awthv - s_aw*thv_zi
     ! needed for the TKE equation
+    if (masterproc) print *,'before wthv_mf',t
     call wthv_mf(&
        shcol,nlev,nlevi,&             ! Input
        wthv_sec,thv,&                 ! Input
        s_ae, s_aw, s_awthv,&          ! Input
-       wthv_sec_tot) 
+       wthv_sec_tot)
+    if (do_edmf.and..not.do_mfdif) then
+       wthv_sec_tot = wthv_sec
+    endif 
        
+    if (masterproc) print *,'before shoc_length',t
     ! Update the turbulent length scale
     call shoc_length(&
        shcol,nlev,nlevi,tke,&               ! Input
@@ -507,6 +520,7 @@ subroutine shoc_main ( &
         
     ! Advance the SGS TKE equation
     ! MKW TODO: add MF buoyancy flux to inputs
+    if (masterproc) print *,'before shoc_tke',t
     call shoc_tke(&
        shcol,nlev,nlevi,dtime,&             ! Input
        wthv_sec_tot,shoc_mix,&              ! Input
@@ -518,6 +532,7 @@ subroutine shoc_main ( &
 
     ! Update SHOC prognostic variables here
     !   via implicit diffusion solver
+    if (masterproc) print *,'before update_prognostics_implicit',t
     call update_prognostics_implicit(&      ! Input
        shcol,nlev,nlevi,num_qtracers,&      ! Input
        dtime,dz_zt,dz_zi,rho_zt,&           ! Input
@@ -529,6 +544,7 @@ subroutine shoc_main ( &
        u_wind,v_wind)                       ! Input/Output
 
     ! Diagnose the second order moments
+    if (masterproc) print *,'before diag_second_shoc_moments',t
     call diag_second_shoc_moments(&
        shcol,nlev,nlevi, &                    ! Input
        thetal,qw,u_wind,v_wind,tke, &         ! Input
@@ -1855,7 +1871,7 @@ subroutine diag_second_moments_ubycond(&
   return
 end subroutine diag_second_moments_ubycond
 
-!==============================================================
+! =========================================================
 ! SHOC Diagnose the third order moment of vertical velocity
 
 subroutine diag_third_shoc_moments(&
