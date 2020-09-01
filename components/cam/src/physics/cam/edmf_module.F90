@@ -4,6 +4,7 @@ module edmf
 
   use physconst,     only: rgas => rair, cp => cpair, ggr => gravit, &
                            lcond => latvap, lice => latice, eps => zvir
+  use spmd_utils,    only: masterproc
   ! use shoc,          only: linear_interp
 
   implicit none
@@ -52,6 +53,7 @@ contains
                               moist_qc_out,                        & ! output: updraft properties for diagnostics
                  ae_out, aw_out,                                   & ! output: variables needed for  diffusion solver
                  awthl_out, awqt_out,                              & ! output: variables needed for  diffusion solver
+                 awthv_out,                                        & ! output: variable needed for TKE solver
                  awql_out, awqi_out,                               & ! output: variables needed for  diffusion solver
                  awu_out, awv_out)                                   ! output: variables needed for  diffusion solver
                  !thlflx_out, qtflx_out )                             ! output: MF turbulent flux diagnostics
@@ -89,7 +91,7 @@ contains
               dry_u_out,  moist_u_out,  dry_v_out,   moist_v_out,    moist_qc_out
   ! outputs - variables needed for diffusion solver
        real(rtype),dimension(shcol,nzi), intent(out) :: &
-              ae_out,aw_out,awthl_out,awqt_out,awql_out,awqi_out,awu_out,awv_out
+              ae_out,aw_out,awthv_out,awthl_out,awqt_out,awql_out,awqi_out,awu_out,awv_out
   ! outputs - flux diagnostics
        !real(rtype),dimension(shcol,nzi), intent(out) :: thlflx_out, qtflx_out
 
@@ -102,7 +104,7 @@ contains
        real(rtype), dimension(shcol,nzi) :: dry_a, moist_a, dry_w, moist_w, &
                                    dry_qt, moist_qt, dry_thl, moist_thl, &
                                    dry_u, moist_u, dry_v, moist_v, moist_qc
-       real(rtype), dimension(shcol,nzi) :: ae, aw, awthl, awqt, awql, awqi, awu, awv
+       real(rtype), dimension(shcol,nzi) :: ae, aw, awthv, awthl, awqt, awql, awqi, awu, awv
        !real(rtype), dimension(shcol,nzi) :: thlflx, qtflx
 
   ! sums over all plumes
@@ -164,7 +166,7 @@ contains
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 
-
+     if (masterproc) print *,'in integrate_mf; first, flip variables'
   ! Flip vertical coordinates and all input variables
      do k=1,nzi
        ! thermodynamic grid variables
@@ -205,6 +207,7 @@ contains
   ! outputs - variables needed for solver
      aw        = 0._rtype
      ! aws       = 0._rtype
+     awthv     = 0._rtype
      awthl     = 0._rtype
      awqt      = 0._rtype
      awqv      = 0._rtype
@@ -218,6 +221,8 @@ contains
 
   ! this is the environmental area - by default 1.
      ae = 1._rtype
+
+     if (masterproc) print *,'start j loop'
 
   ! START MAIN COMPUTATION
   ! NOTE: SHOC does not invert the vertical coordinate, which by default is ordered from lowest to highest pressure
@@ -256,7 +261,8 @@ contains
              entf(k,i) = dzt(k) / L0
            enddo
          enddo
-
+          
+         if (masterproc) print *,'call Poisson and get entrainment'
          ! get Poisson P(dz/L0)
          call Poisson( 1, nz, 1, nup, entf, enti)
 
@@ -283,6 +289,7 @@ contains
          wmin = sigmaw * pwmin
          wmax = sigmaw * pwmax
 
+         if (masterproc) print *,'set plume sfc conditions'
          do i=1,nup
 
            wlv = wmin + (wmax-wmin) / (real(nup)) * (real(i)-1._rtype)
@@ -305,6 +312,7 @@ contains
          enddo
 
          ! integrate updrafts
+         if (masterproc) print *,'integrate updrafts'
          do i=1,nup
            do k=2,nzi
 
@@ -352,6 +360,7 @@ contains
 
          ! writing updraft properties for output
          ! all variables, except areas (moist_a and dry_a) are now multipled by the area
+         if (masterproc) print *,'writing updraft properties for output'
          do k=1,nzi
 
            ! first sum over all i-updrafts
@@ -420,6 +429,7 @@ contains
              awv (j,k) = awv (j,k) + upa(k,i)*upw(k,i)*upv(k,i)
              !aws (k) = aws (k) + upa(k,i)*upw(k,i)*upth(k,i)*cpair
              !aws (k) = aws (k) + upa(k,i)*upw(k,i)*ups(k,i)
+             awthv(j,k)= awthv(j,k)+ upa(k,i)*upw(k,i)*upthv(k,i) 
              awthl(j,k)= awthl(j,k)+ upa(k,i)*upw(k,i)*upthl(k,i) !*cpair/iexh
              awth(j,k) = awth(j,k) + upa(k,i)*upw(k,i)*upth(k,i) !*cpair/iexh
              awqt(j,k) = awqt(j,k) + upa(k,i)*upw(k,i)*upqt(k,i)
@@ -445,6 +455,7 @@ contains
      end do ! j=1,shcol
 
      ! flip output variables so index 1 = model top (i.e. lowest pressure)
+     if (masterproc) print *,'flip output variables'
      do k=1,nzi
        dry_a_out(:,nzi-k+1) = dry_a(:,k)
        dry_w_out(:,nzi-k+1) = dry_w(:,k)
@@ -463,6 +474,7 @@ contains
 
        ae_out(:,nzi-k+1) = ae(:,k)
        aw_out(:,nzi-k+1) = aw(:,k)
+       awthv_out(:,nzi-k+1) = awthv(:,k)
        awthl_out(:,nzi-k+1) = awthl(:,k)
        awqt_out(:,nzi-k+1) = awqt(:,k)
        awql_out(:,nzi-k+1) = awql(:,k)

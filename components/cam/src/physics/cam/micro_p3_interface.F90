@@ -501,10 +501,10 @@ end subroutine micro_p3_readnl
    call addfld('P3_ni2nr_melt_tend',  (/ 'lev' /), 'A', 'kg/kg/s', 'P3 Tendency for melting of ice')
    call addfld('P3_ni_sublim_tend',  (/ 'lev' /), 'A', 'kg/kg/s', 'P3 Tendency for change in ice number from sublimation')
    call addfld('P3_ni_selfcollect_tend',  (/ 'lev' /), 'A', 'kg/kg/s', 'P3 Tendency for change in ice number from collection within a category (Not in paper?)')
-   call addfld('P3_qc2qi_hetero_freeze_tend', (/ 'lev' /), 'A', 'kg/kg/s', 'P3 Tendency for immersion freezing droplets')
-   call addfld('P3_qr2qi_immers_freeze_tend', (/ 'lev' /), 'A', 'kg/kg/s', 'P3 Tendency for immersion freezing rain')
-   call addfld('P3_nc2ni_immers_freeze_tend', (/ 'lev' /), 'A', 'kg/kg/s', 'P3 Tendency for immersion freezing droplets')
-   call addfld('P3_nr2ni_immers_freeze_tend', (/ 'lev' /), 'A', 'kg/kg/s', 'P3 Tendency for immersion freezing rain')
+   call addfld('P3_qc2qi_hetero_frz_tend', (/ 'lev' /), 'A', 'kg/kg/s', 'P3 Tendency for immersion freezing droplets')
+   call addfld('P3_qr2qi_immers_frz_tend', (/ 'lev' /), 'A', 'kg/kg/s', 'P3 Tendency for immersion freezing rain')
+   call addfld('P3_nc2ni_immers_frz_tend', (/ 'lev' /), 'A', 'kg/kg/s', 'P3 Tendency for immersion freezing droplets')
+   call addfld('P3_nr2ni_immers_frz_tend', (/ 'lev' /), 'A', 'kg/kg/s', 'P3 Tendency for immersion freezing rain')
    call addfld('P3_nr_ice_shed_tend', (/ 'lev' /), 'A', 'kg/kg/s', 'P3 Tendency for source for rain number from collision of rain/ice above freezing and shedding')
    call addfld('P3_qc2qr_ice_shed_tend',  (/ 'lev' /), 'A', 'kg/kg/s', 'P3 Tendency for source for rain mass due to cloud water/ice collision above freezing and shedding or wet growth and shedding')
    call addfld('P3_ncshdc', (/ 'lev' /), 'A', 'kg/kg/s', 'P3 Tendency for source for rain number due to cloud water/ice collision above freezing  and shedding (combined with NRSHD in the paper)')
@@ -597,10 +597,10 @@ end subroutine micro_p3_readnl
          call add_default('P3_ni2nr_melt_tend',  1, ' ')
          call add_default('P3_ni_sublim_tend',  1, ' ')
          call add_default('P3_ni_selfcollect_tend',  1, ' ')
-         call add_default('P3_qc2qi_hetero_freeze_tend', 1, ' ')
-         call add_default('P3_qr2qi_immers_freeze_tend', 1, ' ')
-         call add_default('P3_nc2ni_immers_freeze_tend', 1, ' ')
-         call add_default('P3_nr2ni_immers_freeze_tend', 1, ' ')
+         call add_default('P3_qc2qi_hetero_frz_tend', 1, ' ')
+         call add_default('P3_qr2qi_immers_frz_tend', 1, ' ')
+         call add_default('P3_nc2ni_immers_frz_tend', 1, ' ')
+         call add_default('P3_nr2ni_immers_frz_tend', 1, ' ')
          call add_default('P3_nr_ice_shed_tend', 1, ' ')
          call add_default('P3_qc2qr_ice_shed_tend',  1, ' ')
          call add_default('P3_ncshdc', 1, ' ')
@@ -905,7 +905,7 @@ end subroutine micro_p3_readnl
     exner(:ncol,:pver) = 1._rtype/((state%pmid(:ncol,:pver)*1.e-5_rtype)**(rair*inv_cp))
     do icol = 1,ncol
        do k = 1,pver
-! Note: dz is calculated in the opposite direction that dpres is calculated,
+! Note: dz is calculated in the opposite direction that pdel is calculated,
 ! thus when considering any dp/dz calculation we must also change the sign.
           dz(icol,k) = state%zi(icol,k) - state%zi(icol,k+1)
           th(icol,k)  = state%t(icol,k)*exner(icol,k) !/(state%pmid(icol,k)*1.e-5)**(rd*inv_cp) 
@@ -992,7 +992,7 @@ end subroutine micro_p3_readnl
       p3_main_inputs(1,k,13) = numrain(1,k)
       p3_main_inputs(1,k,14) = qm(1,k)
       p3_main_inputs(1,k,15) = rimvol(1,k)
-      p3_main_inputs(1,k,16) = 0._rtype ! state%dpres(1,k) ! MKW: killing this since I'm not using P3 at present
+      p3_main_inputs(1,k,16) = state%pdel(1,k)
       p3_main_inputs(1,k,17) = relvar(1,k)
     end do
     p3_main_inputs(1,pver+1,5) = state%zi(1,pver+1)
@@ -1008,58 +1008,54 @@ end subroutine micro_p3_readnl
     vap_liq_exchange = 0.0_rtype
 
     call t_startf('micro_p3_tend_loop')
-    !call p3_main( &
-    !     cldliq(its:ite,kts:kte),     & ! INOUT  cloud, mass mixing ratio         kg kg-1
-    !     numliq(its:ite,kts:kte),     & ! INOUT  cloud, number mixing ratio       #  kg-1
-    !     rain(its:ite,kts:kte),       & ! INOUT  rain, mass mixing ratio          kg kg-1
-    !     numrain(its:ite,kts:kte),    & ! INOUT  rain, number mixing ratio        #  kg-1
-    !     th(its:ite,kts:kte),         & ! INOUT  potential temperature            K
-    !     qv(its:ite,kts:kte),         & ! INOUT  water vapor mixing ratio         kg kg-1
-    !     dtime,                       & ! IN     model time step                  s
-    !     ice(its:ite,kts:kte),        & ! INOUT  ice, total mass mixing ratio     kg kg-1
-    !     qm(its:ite,kts:kte),      & ! INOUT  ice, rime mass mixing ratio      kg kg-1
-    !     numice(its:ite,kts:kte),     & ! INOUT  ice, total number mixing ratio   #  kg-1
-    !     rimvol(its:ite,kts:kte),     & ! INOUT  ice, rime volume mixing ratio    m3 kg-1
-    !     pres(its:ite,kts:kte),       & ! IN     pressure at cell midpoints       Pa
-    !     dz(its:ite,kts:kte),        & ! IN     vertical grid spacing            m
-    !     npccn(its:ite,kts:kte),      & ! IN ccn activation number tendency kg-1 s-1
-    !     ni_activated(its:ite,kts:kte),       & ! IN activated ice nuclei concentration kg-1
-    !     relvar(its:ite,kts:kte),     & ! IN cloud liquid relative variance
-    !     it,                          & ! IN     time step counter NOTE: starts at 1 for first time step
-    !     precip_liq_surf(its:ite),            & ! OUT    surface liquid precip rate       m s-1
-    !     precip_ice_surf(its:ite),            & ! OUT    surface frozen precip rate       m s-1
-    !     its,                         & ! IN     horizontal index lower bound     -
-    !     ite,                         & ! IN     horizontal index upper bound     -
-    !     kts,                         & ! IN     vertical index lower bound       -
-    !     kte,                         & ! IN     vertical index upper bound       -
-    !     rel(its:ite,kts:kte),        & ! OUT    effective radius, cloud          m
-    !     rei(its:ite,kts:kte),        & ! OUT    effective radius, ice            m
-    !     dummy_out(its:ite,kts:kte),   & ! OUT    mass-weighted fall speed of ice  m s-1
-    !     dummy_out(its:ite,kts:kte),    & ! OUT    mean diameter of ice             m
-    !     rho_qi(its:ite,kts:kte),  & ! OUT    bulk density of ice              kg m-3
-    !     do_predict_nc,               & ! IN     .true.=prognostic Nc, .false.=specified Nc
-    !     ! AaronDonahue new stuff
-    !     state%dpres(its:ite,kts:kte), & ! IN pressure level thickness for computing total mass
-    !     exner(its:ite,kts:kte),      & ! IN exner values
-    !     cmeiout(its:ite,kts:kte),    & ! OUT Deposition/sublimation rate of cloud ice 
-    !     precip_total_tend(its:ite,kts:kte),      & ! OUT Total precipitation (rain + snow)
-    !     nevapr(its:ite,kts:kte),     & ! OUT evaporation of total precipitation (rain + snow)
-    !     qr_evap_tend(its:ite,kts:kte),  & ! OUT rain evaporation
-    !     precip_liq_flux(its:ite,kts:kte+1),     & ! OUT grid-box average rain flux (kg m^-2s^-1) pverp 
-    !     precip_ice_flux(its:ite,kts:kte+1),     & ! OUT grid-box average ice/snow flux (kgm^-2 s^-1) pverp
-    !     cld_frac_r(its:ite,kts:kte),      & ! IN rain cloud fraction
-    !     cld_frac_l(its:ite,kts:kte),      & ! IN liquid cloud fraction
-    !     cld_frac_i(its:ite,kts:kte),      & ! IN ice cloud fraction
-    !     dummy_out(its:ite,kts:kte),     & ! OUT accretion of cloud by rain
-    !     dummy_out(its:ite,kts:kte),     & ! OUT autoconversion of cloud by rain
-    !     tend_out(its:ite,kts:kte,:), & ! OUT p3 microphysics tendencies
-    !     mu(its:ite,kts:kte),         & ! OUT Size distribution shape parameter for radiation
-    !     lambdac(its:ite,kts:kte),    & ! OUT Size distribution slope parameter for radiation
-    !     liq_ice_exchange(its:ite,kts:kte),& ! OUT sum of liq-ice phase change tendenices   
-    !     vap_liq_exchange(its:ite,kts:kte),& ! OUT sun of vap-liq phase change tendencies
-    !     vap_ice_exchange(its:ite,kts:kte),& ! OUT sum of vap-ice phase change tendencies
-    !     col_location(its:ite,:3)          & ! IN column locations
-    !     )
+    call p3_main( &
+         cldliq(its:ite,kts:kte),     & ! INOUT  cloud, mass mixing ratio         kg kg-1
+         numliq(its:ite,kts:kte),     & ! INOUT  cloud, number mixing ratio       #  kg-1
+         rain(its:ite,kts:kte),       & ! INOUT  rain, mass mixing ratio          kg kg-1
+         numrain(its:ite,kts:kte),    & ! INOUT  rain, number mixing ratio        #  kg-1
+         th(its:ite,kts:kte),         & ! INOUT  potential temperature            K
+         qv(its:ite,kts:kte),         & ! INOUT  water vapor mixing ratio         kg kg-1
+         dtime,                       & ! IN     model time step                  s
+         ice(its:ite,kts:kte),        & ! INOUT  ice, total mass mixing ratio     kg kg-1
+         qm(its:ite,kts:kte),      & ! INOUT  ice, rime mass mixing ratio      kg kg-1
+         numice(its:ite,kts:kte),     & ! INOUT  ice, total number mixing ratio   #  kg-1
+         rimvol(its:ite,kts:kte),     & ! INOUT  ice, rime volume mixing ratio    m3 kg-1
+         pres(its:ite,kts:kte),       & ! IN     pressure at cell midpoints       Pa
+         dz(its:ite,kts:kte),        & ! IN     vertical grid spacing            m
+         npccn(its:ite,kts:kte),      & ! IN ccn activation number tendency kg-1 s-1
+         ni_activated(its:ite,kts:kte),       & ! IN activated ice nuclei concentration kg-1
+         relvar(its:ite,kts:kte),     & ! IN cloud liquid relative variance
+         it,                          & ! IN     time step counter NOTE: starts at 1 for first time step
+         precip_liq_surf(its:ite),            & ! OUT    surface liquid precip rate       m s-1
+         precip_ice_surf(its:ite),            & ! OUT    surface frozen precip rate       m s-1
+         its,                         & ! IN     horizontal index lower bound     -
+         ite,                         & ! IN     horizontal index upper bound     -
+         kts,                         & ! IN     vertical index lower bound       -
+         kte,                         & ! IN     vertical index upper bound       -
+         rel(its:ite,kts:kte),        & ! OUT    effective radius, cloud          m
+         rei(its:ite,kts:kte),        & ! OUT    effective radius, ice            m
+         rho_qi(its:ite,kts:kte),  & ! OUT    bulk density of ice              kg m-3
+         do_predict_nc,               & ! IN     .true.=prognostic Nc, .false.=specified Nc
+         ! AaronDonahue new stuff
+         state%pdel(its:ite,kts:kte), & ! IN pressure level thickness for computing total mass
+         exner(its:ite,kts:kte),      & ! IN exner values
+         cmeiout(its:ite,kts:kte),    & ! OUT Deposition/sublimation rate of cloud ice 
+         precip_total_tend(its:ite,kts:kte),      & ! OUT Total precipitation (rain + snow)
+         nevapr(its:ite,kts:kte),     & ! OUT evaporation of total precipitation (rain + snow)
+         qr_evap_tend(its:ite,kts:kte),  & ! OUT rain evaporation
+         precip_liq_flux(its:ite,kts:kte+1),     & ! OUT grid-box average rain flux (kg m^-2s^-1) pverp 
+         precip_ice_flux(its:ite,kts:kte+1),     & ! OUT grid-box average ice/snow flux (kgm^-2 s^-1) pverp
+         cld_frac_r(its:ite,kts:kte),      & ! IN rain cloud fraction
+         cld_frac_l(its:ite,kts:kte),      & ! IN liquid cloud fraction
+         cld_frac_i(its:ite,kts:kte),      & ! IN ice cloud fraction
+         tend_out(its:ite,kts:kte,:), & ! OUT p3 microphysics tendencies
+         mu(its:ite,kts:kte),         & ! OUT Size distribution shape parameter for radiation
+         lambdac(its:ite,kts:kte),    & ! OUT Size distribution slope parameter for radiation
+         liq_ice_exchange(its:ite,kts:kte),& ! OUT sum of liq-ice phase change tendenices   
+         vap_liq_exchange(its:ite,kts:kte),& ! OUT sun of vap-liq phase change tendencies
+         vap_ice_exchange(its:ite,kts:kte),& ! OUT sum of vap-ice phase change tendencies
+         col_location(its:ite,:3)          & ! IN column locations
+         )
 
     p3_main_outputs(:,:,:) = -999._rtype
     do k = 1,pver
@@ -1223,8 +1219,8 @@ end subroutine micro_p3_readnl
    end do
 
    ! Column droplet concentration
-   cdnumc(:ncol) = sum(numliq(:ncol,top_lev:pver)/gravit, dim=2) !* &
-        !state%dpres(:ncol,top_lev:pver)/gravit, dim=2) ! MKW state%dpres makes compiler angry
+   cdnumc(:ncol) = sum(numliq(:ncol,top_lev:pver) * &
+        state%pdel(:ncol,top_lev:pver)/gravit, dim=2)
    do k = top_lev, pver
       do icol = 1, ncol
          if ( cld_frac_l(icol,k) > 0.01_rtype .and. icwmrst(icol,k) > 5.e-5_rtype ) then
@@ -1347,10 +1343,10 @@ end subroutine micro_p3_readnl
    call outfld('P3_ni2nr_melt_tend',  tend_out(:,:,25), pcols, lchnk) 
    call outfld('P3_ni_sublim_tend',  tend_out(:,:,26), pcols, lchnk) 
    call outfld('P3_ni_selfcollect_tend',  tend_out(:,:,27), pcols, lchnk) 
-   call outfld('P3_qc2qi_hetero_freeze_tend', tend_out(:,:,28), pcols, lchnk) 
-   call outfld('P3_qr2qi_immers_freeze_tend', tend_out(:,:,29), pcols, lchnk) 
-   call outfld('P3_nc2ni_immers_freeze_tend', tend_out(:,:,30), pcols, lchnk) 
-   call outfld('P3_nr2ni_immers_freeze_tend', tend_out(:,:,31), pcols, lchnk) 
+   call outfld('P3_qc2qi_hetero_frz_tend', tend_out(:,:,28), pcols, lchnk) 
+   call outfld('P3_qr2qi_immers_frz_tend', tend_out(:,:,29), pcols, lchnk) 
+   call outfld('P3_nc2ni_immers_frz_tend', tend_out(:,:,30), pcols, lchnk) 
+   call outfld('P3_nr2ni_immers_frz_tend', tend_out(:,:,31), pcols, lchnk) 
    call outfld('P3_nr_ice_shed_tend', tend_out(:,:,32), pcols, lchnk) 
    call outfld('P3_qc2qr_ice_shed_tend',  tend_out(:,:,33), pcols, lchnk) 
 !   call outfld('P3_qcmul',  tend_out(:,:,34), pcols, lchnk) ! Not actually used, so not actually recorded.  Commented out here for continuity of the array.
