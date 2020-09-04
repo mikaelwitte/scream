@@ -4,7 +4,6 @@ module edmf
 
   use physconst,     only: rgas => rair, cp => cpair, ggr => gravit, &
                            lcond => latvap, lice => latice, eps => zvir
-  use spmd_utils,    only: masterproc
   ! use shoc,          only: linear_interp
 
   implicit none
@@ -77,6 +76,7 @@ contains
        ! Variable(s)
        integer, intent(in) :: shcol,nz,nzi,nup
        real(rtype), dimension(shcol,nz),  intent(in) :: zt_in,dz_zt_in,p_in !,iex_in
+       ! MKW TODO: remove zi_in as an argument, was only needed for linear_interp calls that were removed on 2020/09/01
        real(rtype), dimension(shcol,nzi), intent(in) :: zi_in
        real(rtype), dimension(shcol,nz),  intent(in) :: u_in,v_in,thl_in,qt_in,qc_in,thv_in  ! all on thermodynamic/midpoint levels
 
@@ -128,7 +128,6 @@ contains
 
        real(rtype) :: iexh
        real(rtype) :: dzt(nz)!, dzi(nzi)
-       real(rtype) :: thl_zi(nzi),qt_zi(nzi)
 
   ! w parameters
        real(rtype),parameter :: &
@@ -166,7 +165,6 @@ contains
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 
-     if (masterproc) print *,'in integrate_mf; first, flip variables'
   ! Flip vertical coordinates and all input variables
      do k=1,nzi
        ! thermodynamic grid variables
@@ -222,7 +220,6 @@ contains
   ! this is the environmental area - by default 1.
      ae = 1._rtype
 
-     if (masterproc) print *,'start j loop'
 
   ! START MAIN COMPUTATION
   ! NOTE: SHOC does not invert the vertical coordinate, which by default is ordered from lowest to highest pressure
@@ -248,11 +245,7 @@ contains
 
        ! if surface buoyancy is positive then do mass-flux, otherwise not
        if (wthv>0.0) then
-         dzt = dz_zt(j,:)
-
-         ! interpolate thl and qt to interface grid
-         call linear_interp(zt,zi,thl(j,:),thl_zi,nz,nzi,shcol,0._rtype)
-         call linear_interp(zt,zi,qt(j,:),qt_zi,nz,nzi,shcol,0._rtype)
+         dzt(:) = dz_zt(j,:)
 
          ! compute entrainment coefficient
          ! get dz/L0
@@ -262,12 +255,12 @@ contains
            enddo
          enddo
           
-         if (masterproc) print *,'call Poisson and get entrainment'
          ! get Poisson P(dz/L0)
-         call Poisson( 1, nz, 1, nup, entf, enti)
+         call Poisson( 2, nz, 1, nup, entf, enti)
 
          ! entrainment: Ent=Ent0/dz*P(dz/L0)
          do i=1,nup
+           ent(1,i) = 0._rtype
            do k=2,nz
              ent(k,i) = real( enti(k,i))*ent0/dzt(k)
            enddo
@@ -289,7 +282,6 @@ contains
          wmin = sigmaw * pwmin
          wmax = sigmaw * pwmax
 
-         if (masterproc) print *,'set plume sfc conditions'
          do i=1,nup
 
            wlv = wmin + (wmax-wmin) / (real(nup)) * (real(i)-1._rtype)
@@ -312,7 +304,6 @@ contains
          enddo
 
          ! integrate updrafts
-         if (masterproc) print *,'integrate updrafts'
          do i=1,nup
            do k=2,nzi
 
@@ -326,8 +317,8 @@ contains
              iexh = (1.e5_rtype / p(j,k))**(rgas/cp) ! MKW NOTE: why not just use SHOC exner??
 
              !Condensation within updrafts, input/output at full levels:
-             call condensation_mf(qtn, thln, p(j,k), iexh, &
-                                   thvn, qcn, thn, qln, qin)
+             !call condensation_mf(qtn, thln, p(j,k), iexh, &
+             !                      thvn, qcn, thn, qln, qin)
 
              ! To avoid singularities w equation has to be computed diferently if wp==0
              b=ggr*(0.5_rtype*(thvn+upthv(k-1,i))/thv(j,k-1)-1._rtype)
@@ -360,7 +351,6 @@ contains
 
          ! writing updraft properties for output
          ! all variables, except areas (moist_a and dry_a) are now multipled by the area
-         if (masterproc) print *,'writing updraft properties for output'
          do k=1,nzi
 
            ! first sum over all i-updrafts
@@ -449,13 +439,12 @@ contains
          !!sflx(kts)  = 0.
          !qtflx(j,1) = 0._rtype
 
-         print*,'max(1-ae)=',maxval(1._rtype-ae(j,:))
+         !print*,'max(1-ae)=',maxval(1._rtype-ae(j,:))
 
        end if  ! ( wthv > 0.0 )
      end do ! j=1,shcol
 
      ! flip output variables so index 1 = model top (i.e. lowest pressure)
-     if (masterproc) print *,'flip output variables'
      do k=1,nzi
        dry_a_out(:,nzi-k+1) = dry_a(:,k)
        dry_w_out(:,nzi-k+1) = dry_w(:,k)
@@ -488,84 +477,6 @@ contains
 
 
   end subroutine integrate_mf
-
-  !==============================================================
-  ! Linear interpolation to get values on various grids
-  ! MKW: copying this from shoc.F90 since I can't get it to work with a "use" statement
-
-subroutine linear_interp(x1,x2,y1,y2,km1,km2,ncol,minthresh)
-    implicit none
-
-    integer, intent(in) :: km1, km2
-    integer, intent(in) :: ncol
-    real(rtype), intent(in) :: x1(ncol,km1), y1(ncol,km1)
-    real(rtype), intent(in) :: x2(ncol,km2)
-    real(rtype), intent(in) :: minthresh
-    real(rtype), intent(out) :: y2(ncol,km2)
-
-    integer :: k1, k2, i
-
-#if 1
-    !i = check_grid(x1,x2,km1,km2,ncol)
-    if (km1 .eq. km2+1) then
-       do k2 = 1,km2
-          k1 = k2+1
-          do i = 1,ncol
-             y2(i,k2) = y1(i,k1-1) + (y1(i,k1)-y1(i,k1-1))*(x2(i,k2)-x1(i,k1-1))/(x1(i,k1)-x1(i,k1-1))
-          end do
-       end do
-    elseif (km2 .eq. km1+1) then
-       k2 = 1
-       do i = 1,ncol
-          y2(i,k2) = y1(i,1) + (y1(i,2)-y1(i,1))*(x2(i,k2)-x1(i,1))/(x1(i,2)-x1(i,1))
-       end do
-       do k2 = 2, km2-1
-          k1 = k2
-          do i = 1,ncol
-             y2(i,k2) = y1(i,k1-1) + (y1(i,k1)-y1(i,k1-1))*(x2(i,k2)-x1(i,k1-1))/(x1(i,k1)-x1(i,k1-1))
-          end do
-       end do
-       k2 = km2
-       do i = 1,ncol
-          y2(i,k2) = y1(i,km1) + (y1(i,km1)-y1(i,km1-1))*(x2(i,k2)-x1(i,km1))/(x1(i,km1)-x1(i,km1-1))
-       end do
-    else
-       print *,km1,km2
-    end if
-    do k2 = 1,km2
-       do i = 1,ncol
-          if (y2(i,k2) .lt. minthresh) then
-             y2(i,k2) = minthresh
-          endif
-       end do
-    end do
-#else
-    do i=1,ncol
-       do k2=1,km2
-          if( x2(i,k2) <= x1(i,1) ) then
-             y2(i,k2) = y1(i,1) + (y1(i,2)-y1(i,1))*(x2(i,k2)-x1(i,1))/(x1(i,2)-x1(i,1))
-          elseif( x2(i,k2) >= x1(i,km1) ) then
-             y2(i,k2) = y1(i,km1) + (y1(i,km1)-y1(i,km1-1))*(x2(i,k2)-x1(i,km1))/(x1(i,km1)-x1(i,km1-1))
-          else
-             do k1 = 2,km1
-                if( (x2(i,k2)>=x1(i,k1-1)).and.(x2(i,k2)<x1(i,k1)) ) then
-                   y2(i,k2) = y1(i,k1-1) + (y1(i,k1)-y1(i,k1-1))*(x2(i,k2)-x1(i,k1-1))/(x1(i,k1)-x1(i,k1-1))
-                endif
-             enddo ! end k1 loop
-          endif
-
-          if (y2(i,k2) .lt. minthresh) then
-             y2(i,k2) = minthresh
-          endif
-
-       enddo ! end k2 loop
-    enddo ! i loop
-#endif
-
-    return
-
-end subroutine linear_interp
-
 
   subroutine condensation_mf( qt, thl, p, iex, thv, qc, th, ql, qi)
   !

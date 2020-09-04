@@ -446,9 +446,8 @@ subroutine shoc_main ( &
 
     ! If using EDMF plumes, diagnose plume properties here
     nup = 25
-    if (masterproc) print *,'before edmf',t
     if (do_edmf) then
-       do_mfdif = .false.
+       do_mfdif = .true.
        call init_random_seed
        call integrate_mf(&
                shcol, nlev, nlevi, dtime,&               ! Input
@@ -499,17 +498,15 @@ subroutine shoc_main ( &
 
     ! Calculate the total buoyancy flux: wthv_tot = s_ae*wthv_sec + s_awthv - s_aw*thv_zi
     ! needed for the TKE equation
-    if (masterproc) print *,'before wthv_mf',t
     call wthv_mf(&
        shcol,nlev,nlevi,&             ! Input
        wthv_sec,thv,&                 ! Input
        s_ae, s_aw, s_awthv,&          ! Input
        wthv_sec_tot)
-    if (do_edmf.and..not.do_mfdif) then
+    if (do_edmf) then !.and..not.do_mfdif) then
        wthv_sec_tot = wthv_sec
     endif 
        
-    if (masterproc) print *,'before shoc_length',t
     ! Update the turbulent length scale
     call shoc_length(&
        shcol,nlev,nlevi,tke,&               ! Input
@@ -519,8 +516,6 @@ subroutine shoc_main ( &
        brunt,shoc_mix)                      ! Output
         
     ! Advance the SGS TKE equation
-    ! MKW TODO: add MF buoyancy flux to inputs
-    if (masterproc) print *,'before shoc_tke',t
     call shoc_tke(&
        shcol,nlev,nlevi,dtime,&             ! Input
        wthv_sec_tot,shoc_mix,&              ! Input
@@ -532,7 +527,6 @@ subroutine shoc_main ( &
 
     ! Update SHOC prognostic variables here
     !   via implicit diffusion solver
-    if (masterproc) print *,'before update_prognostics_implicit',t
     call update_prognostics_implicit(&      ! Input
        shcol,nlev,nlevi,num_qtracers,&      ! Input
        dtime,dz_zt,dz_zi,rho_zt,&           ! Input
@@ -544,7 +538,6 @@ subroutine shoc_main ( &
        u_wind,v_wind)                       ! Input/Output
 
     ! Diagnose the second order moments
-    if (masterproc) print *,'before diag_second_shoc_moments',t
     call diag_second_shoc_moments(&
        shcol,nlev,nlevi, &                    ! Input
        thetal,qw,u_wind,v_wind,tke, &         ! Input
@@ -1604,6 +1597,9 @@ subroutine diag_second_moments(&
          wthl_sec)                                ! Input/Output
 
   call calc_mf_vertflux(shcol,nlev,nlevi,aw,awthl,thl_zi,mf_thlflx)
+  do p=1,shcol
+     if (maxval(abs(mf_thlflx(p,:)))>3.0_rtype) print *,'wthl>3!!!'
+  enddo
 
   ! Calculate vertical flux for moisture
   do_total_fluxes = .true.
