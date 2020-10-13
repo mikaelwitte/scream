@@ -51,6 +51,7 @@ contains
                  dry_v_out,   moist_v_out,                         & ! output: updraft properties for diagnostics
                               moist_qc_out,                        & ! output: updraft properties for diagnostics
                  ae_out, aw_out,                                   & ! output: variables needed for  diffusion solver
+                 awthv_out,                                        & ! output: variable needed for total wthv
                  awthl_out, awqt_out,                              & ! output: variables needed for  diffusion solver
                  awthv_out,                                        & ! output: variable needed for TKE solver
                  awql_out, awqi_out,                               & ! output: variables needed for  diffusion solver

@@ -373,6 +373,7 @@ end function shoc_implements_cnst
     ! MKW added 20200608
     call addfld('THETAL',(/'lev'/), 'A', 'K', 'Liq. water potential temperature')
     call addfld('THETAV',(/'lev'/), 'A', 'K', 'Virtual potential temperature')
+    call addfld('QW', (/'lev'/), 'A', 'kg/kg', 'Total water mixing ratio')
     call addfld('ZM_SHOC',(/'ilev'/), 'A', 'm', 'Momentum heights')
     call addfld('ZT_SHOC',(/'lev'/), 'A', 'm', 'Thermodynamic heights')
     call addfld('WTHV_SEC_tot',(/'lev'/), 'A', 'K m/s', 'Total buoyancy Flux')
@@ -404,6 +405,7 @@ end function shoc_implements_cnst
     ! MKW added 20200608
     call add_default('THETAL',1,' ')
     call add_default('THETAV',1,' ')
+    call add_default('QW', 1, ' ')
     call add_default('ZM_SHOC',1,' ')
     call add_default('ZT_SHOC',1,' ')
     call add_default('WTHV_SEC_tot',1,' ')
@@ -634,8 +636,7 @@ end function shoc_implements_cnst
              edmf_dry_u, edmf_moist_u, &
              edmf_dry_v, edmf_moist_v, &
              edmf_moist_qc, edmf_thlflx, edmf_qtflx, &
-             s_ae, s_aw, s_awthv, s_awthl, s_awqt, &
-             s_awql, s_awqi, s_awu, s_awv,&
+             s_ae, s_aw, s_awthv, s_awthl, s_awqt, s_awql, s_awqi, s_awu, s_awv,&
              edmf_thlflx_out,edmf_qtflx_out
 
    ! Variables below are needed to compute energy integrals for conservation
@@ -894,17 +895,15 @@ end function shoc_implements_cnst
         wthl_sec_out(:ncol,:), wqw_sec_out(:ncol,:), wtke_sec_out(:ncol,:), & ! Output (diagnostic)
         uw_sec_out(:ncol,:), vw_sec_out(:ncol,:), w3_out(:ncol,:), & ! Output (diagnostic)
         wqls_out(:ncol,:),brunt_out(:ncol,:),rcm2(:ncol,:), & ! Output (diagnostic)
-        wthv_sec_tot(:ncol,:), & ! Output (EDMF diagnostic)
+        wthv_sec_tot(:ncol,:), &                      ! Output (EDMF diagnostic)
         edmf_dry_a(:ncol,:), edmf_moist_a(:ncol,:), & ! Output (EDMF diagnostic)
         edmf_dry_w(:ncol,:), edmf_moist_w(:ncol,:), & ! Output (EDMF diagnostic)
         edmf_dry_qt(:ncol,:), edmf_moist_qt(:ncol,:), & ! Output (EDMF diagnostic)
         edmf_dry_thl(:ncol,:), edmf_moist_thl(:ncol,:), & ! Output (EDMF diagnostic)
         edmf_dry_u(:ncol,:), edmf_moist_u(:ncol,:), & ! Output (EDMF diagnostic)
         edmf_dry_v(:ncol,:), edmf_moist_v(:ncol,:), & ! Output (EDMF diagnostic)
-                             edmf_moist_qc(:ncol,:), & !Output (EDMF diagnostic)
-        edmf_thlflx(:ncol,:), edmf_qtflx(:ncol,:), & ! Output (EDMF diagnostic)
-        s_ae(:ncol,:), s_aw(:ncol,:), & ! Output (EDMF diagnostic)
-        s_awthv(:ncol,:), s_awthl(:ncol,:), s_awqt(:ncol,:), & ! Output (EDMF diagnostic)
+        edmf_moist_qc(:ncol,:), edmf_thlflx(:ncol,:), edmf_qtflx(:ncol,:), & ! Output (EDMF diagnostic)
+        s_ae(:ncol,:), s_aw(:ncol,:), s_awthv(:ncol,:), s_awthl(:ncol,:), s_awqt(:ncol,:), & ! Output (EDMF diagnostic)
         s_awql(:ncol,:), s_awqi(:ncol,:), s_awu(:ncol,:), s_awv(:ncol,:) ) ! Output (EDMF diagnostic)
 
    ! Transfer back to pbuf variables
@@ -1183,12 +1182,13 @@ end function shoc_implements_cnst
     ! MKW added 20200608
     call outfld('THETAL',thlm,pcols,lchnk)
     call outfld('THETAV',thv,pcols,lchnk)
+    call outfld('QW', rtm, pcols, lchnk)
     call outfld('ZM_SHOC',zi_g,pcols,lchnk)
     call outfld('ZT_SHOC',zt_g,pcols,lchnk)
-!    call outfld('WTHV_SEC_tot',wthv_tot_output,pcols,lchnk)
-!    call outfld('PBL_H', pblh, pcols, lchnk)
-!    call outfld('rho_i', rrho_i, pcols, lchnk)
-!    call outfld('rho', rrho, pcols, lchnk)
+    call outfld('WTHV_SEC_tot',wthv_tot_output , pcols, lchnk)
+    call outfld('PBL_H', pblh, pcols, lchnk)
+    call outfld('rho_i', rrho_i, pcols, lchnk)
+    call outfld('rho', rrho, pcols, lchnk)
 
     ! EDMF outputs
     call outfld( 'edmf_DRY_A'    , edmf_dry_a,     pcols, lchnk )
@@ -1206,13 +1206,13 @@ end function shoc_implements_cnst
     call outfld( 'edmf_MOIST_QC' , edmf_moist_qc,  pcols, lchnk )
     call outfld( 'edmf_thlflx'   , edmf_thlflx_out,pcols, lchnk )
     call outfld( 'edmf_qtflx'    , edmf_qtflx_out, pcols, lchnk )
-!    call outfld( 'edmf_S_AE'     , s_ae,           pcols, lchnk )
-!    call outfld( 'edmf_S_AW'     , s_aw,           pcols, lchnk )
-!    call outfld( 'edmf_S_AWTHV'  , s_awthv,        pcols, lchnk )
-!    call outfld( 'edmf_S_AWTHL'  , s_awthl,        pcols, lchnk )
-!    call outfld( 'edmf_S_AWQT'   , s_awqt,         pcols, lchnk )
-!    call outfld( 'edmf_S_AWU'    , s_awu,          pcols, lchnk )
-!    call outfld( 'edmf_S_AWV'    , s_awv,          pcols, lchnk )
+    call outfld( 'edmf_S_AE'     , s_ae,           pcols, lchnk )
+    call outfld( 'edmf_S_AW'     , s_aw,           pcols, lchnk )
+    call outfld( 'edmf_S_AWTHV'  , s_awthv,        pcols, lchnk )
+    call outfld( 'edmf_S_AWTHL'  , s_awthl,        pcols, lchnk )
+    call outfld( 'edmf_S_AWQT'   , s_awqt,         pcols, lchnk )
+    call outfld( 'edmf_S_AWU'    , s_awu,          pcols, lchnk )
+    call outfld( 'edmf_S_AWV'    , s_awv,          pcols, lchnk )
 
 #endif
     return
