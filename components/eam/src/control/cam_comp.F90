@@ -20,6 +20,7 @@ module cam_comp
    use perf_mod
    use cam_logfile,       only: iulog
    use physics_buffer,            only: physics_buffer_desc
+   use scamMod,           only: single_column
 
    implicit none
    private
@@ -234,6 +235,13 @@ subroutine cam_run1(cam_in, cam_out)
    call t_startf ('stepon_run1')
    call stepon_run1( dtime, phys_state, phys_tend, pbuf2d, dyn_in, dyn_out )
    call t_stopf  ('stepon_run1')
+
+   !----------------------------------------------------------
+   ! MJ added the block following Peter suggestion:
+   !----------------------------------------------------------
+   if (single_column) then
+      call scam_use_iop_srf(cam_in)
+   endif
 
    !
    !----------------------------------------------------------
