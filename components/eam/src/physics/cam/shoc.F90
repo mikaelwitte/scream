@@ -445,7 +445,7 @@ subroutine shoc_main ( &
        brunt,shoc_mix)                      ! Output
 
     ! If using EDMF plumes, diagnose plume properties here
-    nup = 25
+    nup = 100
     if (do_edmf) then
        do_mfdif = .true.
        call init_random_seed
