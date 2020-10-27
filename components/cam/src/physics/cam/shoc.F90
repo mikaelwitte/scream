@@ -82,7 +82,7 @@ logical(btype), parameter :: dothetal_skew = .false.
 ! Use EDMF approach (SHOC+MF)
 !  In the long run, set this as a namelist variable.
 !  May even want to put this in shoc_intr?
-logical, parameter :: do_edmf = .true.
+!logical, parameter :: do_edmf = .true.
 
 ! ========
 ! Below define some parameters for SHOC
@@ -201,6 +201,7 @@ subroutine shoc_main ( &
      uw_sec, vw_sec, w3,&                 ! Output (diagnostic)
      wqls_sec, brunt, shoc_ql2,&          ! Output (diagnostic)
      wthv_sec_tot, &                      ! EDMF output (diagnostic)
+     do_edmf, &                           ! EDMF input
      mf_dry_a, mf_moist_a,&               ! EDMF input/output
      mf_dry_w, mf_moist_w,&               ! EDMF input/output
      mf_dry_qt, mf_moist_qt,&             ! EDMF input/output
@@ -292,6 +293,7 @@ subroutine shoc_main ( &
   real(rtype), intent(inout) :: shoc_ql(shcol,nlev)
 
   ! EDMF variables
+  logical, intent(in) :: do_edmf
   ! mf_* are diagnostic variables
   ! s_* are integrated plume fluxes for calculating MF contribution to total tendencies
   real(rtype), intent(inout), dimension(shcol,nlevi) :: &
@@ -433,7 +435,6 @@ subroutine shoc_main ( &
     nup = 25
     if (do_edmf) then
        do_mfdif = .true.
-       call init_random_seed
        call integrate_mf(&
                shcol, nlev, nlevi, dtime,&               ! Input
                zt_grid, zi_grid, dz_zt, pres,&           ! Input
@@ -488,9 +489,7 @@ subroutine shoc_main ( &
        wthv_sec,thv,&                 ! Input
        s_ae, s_aw, s_awthv,&          ! Input
        wthv_sec_tot)
-    if (do_edmf) then !.and..not.do_mfdif) then
-       wthv_sec_tot = wthv_sec
-    endif 
+    !wthv_sec_tot=wthv_sec
        
     ! Update the turbulent length scale
     call shoc_length(&
@@ -529,11 +528,10 @@ subroutine shoc_main ( &
        isotropy,tkh,tk,&                      ! Input
        dz_zi,zt_grid,zi_grid,shoc_mix, &      ! Input
        wthl_sfc, wqw_sfc, uw_sfc, vw_sfc, &   ! Input
+       do_mfdif,   s_ae,       s_aw, &        ! EDMF Input
+       s_awthl,    s_awqt, &                  ! EDMF Input
        thl_sec, qw_sec,wthl_sec,wqw_sec,&     ! Output
        qwthl_sec, uw_sec, vw_sec, wtke_sec, & ! Output
-       s_ae,       s_aw, &                    ! EDMF Input
-       s_awthl,    s_awqt, &                  ! EDMF Input
-       wtracer_sec,&                          ! Output
        w_sec,&                                ! Output
        mf_thlflx, mf_qtflx)                   ! EDMF Output - diagnostic MF fluxes
 
@@ -828,8 +826,12 @@ subroutine update_prognostics_implicit( &
   !  at interfaces. Substitue dp = g*rho*dz in the above equation
   call compute_tmpi(nlevi, shcol, dtime, rho_zi, dz_zi, tmpi)
   ! MKW added 20200820
-  tmpi3(:,1) = 0._rtype
-  call compute_tmpi3(nlevi, shcol, dtime, rho_zi, tmpi3)
+  if (do_mf) then
+     tmpi3(:,1) = 0._rtype
+     call compute_tmpi3(nlevi, shcol, dtime, rho_zi, tmpi3)
+  else
+     tmpi3(:,:) = 0._rtype
+  endif
 
   ! compute 1/dp term, needed in diffusion solver
   call dp_inverse(nlev, shcol, rho_zt, dz_zt, rdp_zt)
@@ -1066,7 +1068,7 @@ subroutine diag_second_shoc_moments(&
          isotropy,tkh,tk,&                      ! Input
          dz_zi,zt_grid,zi_grid,shoc_mix, &      ! Input
          wthl_sfc, wqw_sfc, uw_sfc, vw_sfc, &   ! Input
-         ae, aw, awthl, awqt, &                 ! EDMF Input
+         do_mf, ae, aw, awthl, awqt, &          ! EDMF Input
          thl_sec,qw_sec,wthl_sec,wqw_sec,&      ! Output
          qwthl_sec, uw_sec, vw_sec, wtke_sec, & ! Output
          w_sec,&                                ! Output
@@ -1118,6 +1120,8 @@ subroutine diag_second_shoc_moments(&
   ! Surface momentum flux (v-direction) [m2/s2]
   real(rtype), intent(in) :: vw_sfc(shcol)
   ! Begin EDMF-specific inputs
+  ! Include MF in fluxes?
+  logical,     intent(in) :: do_mf
   ! EDMF environment area [-]
   real(rtype), intent(in) :: ae(shcol,nlevi)
   ! EDMF area-weighted plume mean updraft speed [m/s]
@@ -1182,10 +1186,9 @@ subroutine diag_second_shoc_moments(&
      thetal, qw, u_wind, v_wind, tke, &     ! Input
      isotropy, tkh, tk,&                    ! Input
      dz_zi, zt_grid, zi_grid, shoc_mix, &   ! Input
-     ae, aw, awthl, awqt, &                 ! EDMF Input
+     do_mf, ae, aw, awthl, awqt, &          ! EDMF Input
      thl_sec, qw_sec,wthl_sec,wqw_sec,&     ! Input/Output
      qwthl_sec, uw_sec, vw_sec, wtke_sec, & ! Input/Output
-     wtracer_sec,&                          ! Input/Output
      w_sec,&                                ! Output
      mf_thlflx, mf_qtflx)                   ! EDMF Output
 
@@ -1361,7 +1364,7 @@ subroutine diag_second_moments(&
          thetal,qw,u_wind,v_wind,tke, &         ! Input
          isotropy,tkh,tk,&                      ! Input
          dz_zi,zt_grid,zi_grid,shoc_mix, &      ! Input
-         ae, aw, awthl, awqt, &                 ! Input - EDMF
+         do_mf, ae, aw, awthl, awqt, &          ! Input - EDMF
          thl_sec,qw_sec,wthl_sec,wqw_sec,&      ! Input/Output
          qwthl_sec, uw_sec, vw_sec, wtke_sec, & ! Input/Output
          w_sec,&                                ! Output
@@ -1410,6 +1413,7 @@ subroutine diag_second_moments(&
   real(rtype), intent(in) :: shoc_mix(shcol,nlev)
 
   !EDMF inputs
+  logical    , intent(in) :: do_mf
   real(rtype), intent(in) :: ae(shcol,nlevi)
   real(rtype), intent(in) :: aw(shcol,nlevi)
   real(rtype), intent(in) :: awthl(shcol,nlevi)
@@ -1485,7 +1489,7 @@ subroutine diag_second_moments(&
          qwthl_sec)                               ! Input/Output
 
   ! Calculate vertical flux for heat
-  do_total_fluxes = .true.
+  do_total_fluxes = do_mf
   call calc_shoc_vertflux(&
          shcol,nlev,nlevi,tkh_zi,dz_zi,thetal,&   ! Input
          zt_grid,zi_grid,ae,aw,awthl,&            ! Input
@@ -1493,12 +1497,9 @@ subroutine diag_second_moments(&
          wthl_sec)                                ! Input/Output
 
   call calc_mf_vertflux(shcol,nlev,nlevi,aw,awthl,thl_zi,mf_thlflx)
-  do p=1,shcol
-     if (maxval(abs(mf_thlflx(p,:)))>3.0_rtype) print *,'wthl>3!!!'
-  enddo
 
   ! Calculate vertical flux for moisture
-  do_total_fluxes = .true.
+  do_total_fluxes = do_mf
   call calc_shoc_vertflux(&
          shcol,nlev,nlevi,tkh_zi,dz_zi,qw,&       ! Input
          zt_grid,zi_grid,ae,aw,awqt,&             ! Input

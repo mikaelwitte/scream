@@ -629,6 +629,7 @@ end function shoc_implements_cnst
    real(r8) :: wtracer_sfc(pcols,edsclr_dim)
 
    ! For EDMF output - MKW 20200402
+   logical  :: do_edmf_in, do_edmf
    real(r8), dimension(pcols,pverp) :: edmf_dry_a, edmf_moist_a, &
              edmf_dry_w, edmf_moist_w, &
              edmf_dry_qt, edmf_moist_qt, &
@@ -877,7 +878,12 @@ end function shoc_implements_cnst
    ! ------------------------------------------------- !
    ! Actually call SHOC                                !
    ! ------------------------------------------------- !
-
+   do_edmf_in = .true.
+   !if (is_first_step()) then
+   !   do_edmf = .false.
+   !else
+      do_edmf = do_edmf_in
+   !endif
    call shoc_main( &
         ncol, pver, pverp, dtime, nadv, & ! Input
 	host_dx_in(:ncol), host_dy_in(:ncol), thv(:ncol,:),& ! Input
@@ -896,6 +902,7 @@ end function shoc_implements_cnst
         uw_sec_out(:ncol,:), vw_sec_out(:ncol,:), w3_out(:ncol,:), & ! Output (diagnostic)
         wqls_out(:ncol,:),brunt_out(:ncol,:),rcm2(:ncol,:), & ! Output (diagnostic)
         wthv_sec_tot(:ncol,:), &                      ! Output (EDMF diagnostic)
+        do_edmf, &                                    ! Input (EDMF control)
         edmf_dry_a(:ncol,:), edmf_moist_a(:ncol,:), & ! Output (EDMF diagnostic)
         edmf_dry_w(:ncol,:), edmf_moist_w(:ncol,:), & ! Output (EDMF diagnostic)
         edmf_dry_qt(:ncol,:), edmf_moist_qt(:ncol,:), & ! Output (EDMF diagnostic)

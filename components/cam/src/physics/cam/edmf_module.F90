@@ -8,7 +8,7 @@ module edmf
 
   implicit none
 
-  public :: integrate_mf, init_random_seed, calc_mf_vertflux, compute_tmpi3
+  public :: integrate_mf, calc_mf_vertflux, compute_tmpi3!init_random_seed, calc_mf_vertflux, compute_tmpi3
 
   private
 
@@ -53,7 +53,6 @@ contains
                  ae_out, aw_out,                                   & ! output: variables needed for  diffusion solver
                  awthv_out,                                        & ! output: variable needed for total wthv
                  awthl_out, awqt_out,                              & ! output: variables needed for  diffusion solver
-                 awthv_out,                                        & ! output: variable needed for TKE solver
                  awql_out, awqi_out,                               & ! output: variables needed for  diffusion solver
                  awu_out, awv_out)                                   ! output: variables needed for  diffusion solver
                  !thlflx_out, qtflx_out )                             ! output: MF turbulent flux diagnostics
@@ -97,6 +96,8 @@ contains
        !real(rtype),dimension(shcol,nzi), intent(out) :: thlflx_out, qtflx_out
 
   ! INTERNAL VARIABLES
+  ! physics controls
+       logical, parameter :: do_condensation = .false.
   ! flipped variables (i.e. index 1 is at surface)
        real(rtype), dimension(shcol,nz)  :: zt, dz_zt, iexner, p
        real(rtype), dimension(shcol,nzi) :: zi
@@ -257,7 +258,8 @@ contains
          enddo
 
          ! get poisson P(dz/L0)
-         call poisson( nz, nup, entf, enti, thl(nz))
+         !enti(:,:) = 4
+         call poisson( nz, nup, entf, enti, thl(j,nz))
          ! call Poisson( 2, nz, 1, nup, entf, enti)
 
          ! entrainment: Ent=Ent0/dz*P(dz/L0)
@@ -296,10 +298,23 @@ contains
            upu(1, i) = u(j,1)
            upv(1, i) = v(j,1)
 
-           upqc(1,i)  = 0._rtype
            upqt(1,i)  = qt(j,1)  + 0.32_rtype * upw(1,i) * sigmaqt/sigmaw
            upthv(1,i) = thv(j,1) + 0.58_rtype * upw(1,i) * sigmath/sigmaw
            upthl(1,i) = upthv(1,i) / (1._rtype+eps*upqt(1,i))
+
+           if (do_condensation) then
+                iexh = (1.e5_rtype / p(j,1))**(rgas/cp)
+                call condensation_mf(upqt(1,i), upthl(1,i), p(j,1), iexh, &
+                                     thvn, qcn, thn, qln, qin)
+                upthv(1,i) = thvn
+                upqc(1,i) = qcn
+                upql(1,i) = qln
+                upqi(1,i) = qin
+           else
+                upqc(1,i) = 0._rtype
+                upthv(1,i) = upthl(1,i)*(1._rtype+eps*upqt(1,i))
+           end if
+
            upth(1,i)  = upthl(1,i)
            upqv(1,i)  = upqt(1,i)
 
@@ -319,8 +334,13 @@ contains
              iexh = (1.e5_rtype / p(j,k))**(rgas/cp) ! MKW NOTE: why not just use SHOC exner??
 
              !Condensation within updrafts, input/output at full levels:
-             !call condensation_mf(qtn, thln, p(j,k), iexh, &
-             !                      thvn, qcn, thn, qln, qin)
+             if (do_condensation) then
+                call condensation_mf(qtn, thln, p(j,k), iexh, &
+                                    thvn, qcn, thn, qln, qin)
+             else
+                qcn = 0._rtype
+                thvn = thln*(1._rtype+eps*qtn)
+             end if
 
              ! To avoid singularities w equation has to be computed diferently if wp==0
              b=ggr*(0.5_rtype*(thvn+upthv(k-1,i))/thv(j,k-1)-1._rtype)
@@ -628,8 +648,8 @@ contains
   subroutine poisson(nz,nup,lambda,poi,state)
 
          integer, intent(in)                     :: nz,nup
-         real(r8), intent(in)                    :: state
-         real(r8), dimension(nz,nup), intent(in) :: lambda
+         real(rtype), intent(in)                    :: state
+         real(rtype), dimension(nz,nup), intent(in) :: lambda
          integer, dimension(nz,nup), intent(out) :: poi
          integer                                 :: i,j
 
@@ -649,7 +669,7 @@ contains
     ! By Adam Herrington
     !**********************************************************************
 
-         real(r8),intent(in)  :: state
+         real(rtype),intent(in)  :: state
          integer, allocatable :: seed(:)
          integer               :: i,n,tmpseed
 
@@ -658,7 +678,7 @@ contains
          if (allocated(seed)) deallocate(seed)
          allocate(seed(n))
 
-         tmpseed = int((state - int(state)) * 1000000000._r8)
+         tmpseed = int((state - int(state)) * 1000000000._rtype)
          do i=1,n
            seed(i) = tmpseed
          end do
@@ -675,16 +695,16 @@ contains
     ! By Adam Herrington
     !**********************************************************************
 
-         real(r8), intent(in) :: lambda
+         real(rtype), intent(in) :: lambda
          integer, intent(out) :: kout
 
          !Local variables
-         real(r8) :: puni, tmpuni, explam
+         real(rtype) :: puni, tmpuni, explam
          integer  :: k
 
          k = 0
-         explam = exp(-1._r8*lambda)
-         puni = 1._r8
+         explam = exp(-1._rtype*lambda)
+         puni = 1._rtype
          do while (puni.gt.explam)
            k = k + 1
            call random_number(tmpuni)
