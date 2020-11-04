@@ -259,7 +259,8 @@ contains
          enddo
 
          ! get Poisson P(dz/L0)
-         call Poisson( 2, nz, 1, nup, entf, enti)
+         enti(:,:) = 4._rtype
+         !call Poisson( 2, nz, 1, nup, entf, enti)
 
          ! entrainment: Ent=Ent0/dz*P(dz/L0)
          do i=1,nup
@@ -620,387 +621,387 @@ contains
 
   end subroutine compute_tmpi3
 
-  subroutine Poisson(istart,iend,jstart,jend,mu,poi)
-         ! Variable(s)
-         integer, intent(in) :: istart,iend,jstart,jend
-         real(rtype), dimension(istart:iend,jstart:jend),intent(in) :: mu
-         integer, dimension(istart:iend,jstart:jend), intent(out) :: poi
-
-         integer :: i,j
-
-         ! do this only once
-         ! call init_random_seed
-
-         do i=istart,iend
-           do j=jstart,jend
-             call   random_poisson(mu(i,j),.true.,poi(i,j))
-           enddo
-         enddo
-
-  end subroutine Poisson
-
-
-  subroutine init_random_seed()
-
-         implicit none
-         integer, allocatable :: seed(:)
-         integer :: i, n, un, istat, dt(8), pid
-         integer(itype) :: t
-
-         call random_seed(size = n)
-         allocate(seed(n))
-         ! First try if the OS provides a random number generator
-         open(newunit=un, file="/dev/urandom", access="stream", &
-         form="unformatted", action="read", status="old", iostat=istat)
-         if (istat == 0) then
-           read(un) seed
-           close(un)
-         else
-         ! Fallback to XOR:ing the current time and pid. The PID is
-         ! useful in case one launches multiple instances of the same
-         ! program in parallel.
-           call system_clock(t)
-           if (t == 0) then
-             call date_and_time(values=dt)
-             t = (dt(1) - 1970) * 365_itype * 24 * 60 * 60 * 1000 &
-               + dt(2) * 31_itype * 24 * 60 * 60 * 1000 &
-               + dt(3) * 24_itype * 60 * 60 * 1000 &
-               + dt(5) * 60 * 60 * 1000 &
-               + dt(6) * 60 * 1000 + dt(7) * 1000 &
-               + dt(8)
-           end if
-           !pid = getpid()
-           ! for distributed memory jobs we need to fix this
-           pid = 1
-           t = ieor(t, int(pid, kind(t)))
-           do i=1,n
-             seed(i) = lcg(t)
-           end do
-         end if
-         call random_seed(put=seed)
-
-         contains
-         ! This simple PRNG might not be good enough for real work, but is
-         ! sufficient for seeding a better PRNG.
-         function lcg(s)
-           integer :: lcg
-           integer(itype) :: s
-           if (s == 0) then
-             s = 104729
-           else
-             s = mod(s, 4294967296_itype)
-           end if
-           s = mod(s * 279470273_itype, 4294967291_itype)
-           lcg = int(mod(s, int(huge(0), itype)), kind(0))
-         end function lcg
-
-  end subroutine init_random_seed
-
-
-  subroutine random_Poisson(mu,first,ival)
-  !**********************************************************************
-  !     Translated to Fortran 90 by Alan Miller from:
-  !                           RANLIB
-  !
-  !     Library of Fortran Routines for Random Number Generation
-  !
-  !                    Compiled and Written by:
-  !
-  !                         Barry W. Brown
-  !                          James Lovato
-  !
-  !             Department of Biomathematics, Box 237
-  !             The University of Texas, M.D. Anderson Cancer Center
-  !             1515 Holcombe Boulevard
-  !             Houston, TX      77030
-  !
-  ! This work was supported by grant CA-16672 from the National Cancer Institute.
-
-  !                    GENerate POIsson random deviate
-  !                            Function
-  ! Generates a single random deviate from a Poisson distribution with mean mu.
-  !                            Arguments
-  !     mu --> The mean of the Poisson distribution from which
-  !            a random deviate is to be generated.
-  !                              REAL mu
-  !                              Method
-  !     For details see:
-  !               Ahrens, J.H. and Dieter, U.
-  !               Computer Generation of Poisson Deviates
-  !               From Modified Normal Distributions.
-  !               ACM Trans. Math. Software, 8, 2
-  !               (June 1982),163-179
-  !     TABLES: COEFFICIENTS A0-A7 FOR STEP F. FACTORIALS FACT
-  !     COEFFICIENTS A(K) - FOR PX = FK*V*V*SUM(A(K)*V**K)-DEL
-  !     SEPARATION OF CASES A AND B
-
-  !     .. Scalar Arguments ..
-  	REAL(rtype), INTENT(IN)    :: mu
-  	LOGICAL, INTENT(IN) :: first
-    INTEGER             :: ival
-  !     ..
-  !     .. Local Scalars ..
-  	REAL(rtype)          :: b1, b2, c, c0, c1, c2, c3, del, difmuk, e, fk, fx, fy, g,  &
-                      omega, px, py, t, u, v, x, xx
-  	REAL(rtype), SAVE    :: s, d, p, q, p0
-          INTEGER       :: j, k, kflag
-  	LOGICAL, SAVE :: full_init
-          INTEGER, SAVE :: l, m
-  !     ..
-  !     .. Local Arrays ..
-  	REAL(rtype), SAVE    :: pp(35)
-  !     ..
-  !     .. Data statements ..
-  	REAL(rtype), PARAMETER :: a0 = -.5_rtype, a1 = .3333333_rtype, a2 = -.2500068_rtype, a3 = .2000118_rtype,  &
-                  a4 = -.1661269_rtype, a5 = .1421878_rtype, a6 = -.1384794_rtype,   &
-                   a7 = .1250060_rtype
-
-  	REAL(rtype), PARAMETER :: fact(10) = (/ 1._rtype, 1._rtype, 2._rtype, 6._rtype, 24._rtype, 120._rtype, 720._rtype, 5040._rtype,  &
-              40320._rtype, 362880._rtype /)
-
-  !     ..
-  !     .. Executable Statements ..
-     IF (mu > 10.0_rtype) THEN
-  !     C A S E  A. (RECALCULATION OF S, D, L IF MU HAS CHANGED)
-
-    IF (first) THEN
-  s = SQRT(mu)
-  d = 6.0_rtype*mu*mu
-
-  !             THE POISSON PROBABILITIES PK EXCEED THE DISCRETE NORMAL
-  !             PROBABILITIES FK WHENEVER K >= M(MU). L=IFIX(MU-1.1484)
-  !             IS AN UPPER BOUND TO M(MU) FOR ALL MU >= 10 .
-
-  l = mu - 1.1484
-  full_init = .false.
-    END IF
-
-
-  !     STEP N. NORMAL SAMPLE - random_normal() FOR STANDARD NORMAL DEVIATE
-
-  	  g = mu + s*random_normal()
-  	  IF (g > 0.0_rtype) THEN
-  		ival = g
-
-  	!     STEP I. IMMEDIATE ACCEPTANCE IF ival IS LARGE ENOUGH
-
-  		IF (ival>=l) RETURN
-
-  	!     STEP S. SQUEEZE ACCEPTANCE - SAMPLE U
-
-  		fk = ival
-  		difmuk = mu - fk
-  		CALL RANDOM_NUMBER(u)
-  		IF (d*u >= difmuk*difmuk*difmuk) RETURN
-  	  END IF
-
-  	!     STEP P. PREPARATIONS FOR STEPS Q AND H.
-  	!             (RECALCULATIONS OF PARAMETERS IF NECESSARY)
-  	!             .3989423=(2*PI)**(-.5)  .416667E-1=1./24.  .1428571=1./7.
-  	!             THE QUANTITIES B1, B2, C3, C2, C1, C0 ARE FOR THE HERMITE
-  	!             APPROXIMATIONS TO THE DISCRETE NORMAL PROBABILITIES FK.
-  	!             C=.1069/MU GUARANTEES MAJORIZATION BY THE 'HAT'-FUNCTION.
-
-  	  IF (.NOT. full_init) THEN
-  		omega = .3989423_rtype/s
-  		b1 = .4166667E-1_rtype/mu
-  		b2 = .3_rtype*b1*b1
-  		c3 = .1428571_rtype*b1*b2
-  		c2 = b2 - 15._rtype*c3
-  		c1 = b1 - 6._rtype*b2 + 45._rtype*c3
-  		c0 = 1._rtype - b1 + 3._rtype*b2 - 15._rtype*c3
-  		c = .1069_rtype/mu
-  		full_init = .true.
-  	  END IF
-
-  	  IF (g < 0.0_rtype) GO TO 50
-
-  	!             'SUBROUTINE' F IS CALLED (KFLAG=0 FOR CORRECT RETURN)
-
-  	  kflag = 0
-  	  GO TO 70
-
-  	!     STEP Q. QUOTIENT ACCEPTANCE (RARE CASE)
-
-  	  40 IF (fy-u*fy <= py*EXP(px-fx)) RETURN
-
-  	!     STEP E. EXPONENTIAL SAMPLE - random_exponential() FOR STANDARD EXPONENTIAL
-  	!             DEVIATE E AND SAMPLE T FROM THE LAPLACE 'HAT'
-  	!             (IF T <= -.6744 THEN PK < FK FOR ALL MU >= 10.)
-
-  	  50 e = random_exponential()
-  	  CALL RANDOM_NUMBER(u)
-  	  u = u + u - 1
-  	  t = 1.8_rtype + SIGN(e, u)
-  	  IF (t <= (-.6744_rtype)) GO TO 50
-  	  ival = mu + s*t
-  	  fk = ival
-  	  difmuk = mu - fk
-
-  	!             'SUBROUTINE' F IS CALLED (KFLAG=1 FOR CORRECT RETURN)
-
-  	  kflag = 1
-  	  GO TO 70
-
-  	!     STEP H. HAT ACCEPTANCE (E IS REPEATED ON REJECTION)
-
-  	  60 IF (c*ABS(u) > py*EXP(px+e) - fy*EXP(fx+e)) GO TO 50
-  	  RETURN
-
-  	!     STEP F. 'SUBROUTINE' F. CALCULATION OF PX, PY, FX, FY.
-  	!             CASE ival < 10 USES FACTORIALS FROM TABLE FACT
-
-  	  70 IF (ival>=10) GO TO 80
-  	  px = -mu
-  	  py = mu**ival/fact(ival+1)
-  	  GO TO 110
-
-  	!             CASE ival >= 10 USES POLYNOMIAL APPROXIMATION
-  	!             A0-A7 FOR ACCURACY WHEN ADVISABLE
-  	!             .8333333E-1=1./12.  .3989423=(2*PI)**(-.5)
-
-  	  80 del = .8333333E-1_rtype/fk
-  	  del = del - 4.8_rtype*del*del*del
-  	  v = difmuk/fk
-  	  IF (ABS(v)>0.25_rtype) THEN
-  		px = fk*LOG(1._rtype + v) - difmuk - del
-  	  ELSE
-  		px = fk*v*v* (((((((a7*v+a6)*v+a5)*v+a4)*v+a3)*v+a2)*v+a1)*v+a0) - del
-  	  END IF
-  	  py = .3989423_rtype/SQRT(fk)
-  	  110 x = (0.5_rtype - difmuk)/s
-  	  xx = x*x
-  	  fx = -0.5_rtype*xx
-  	  fy = omega* (((c3*xx + c2)*xx + c1)*xx + c0)
-  	  IF (kflag <= 0) GO TO 40
-  	  GO TO 60
-
-  	!---------------------------------------------------------------------------
-  	!     C A S E  B.    mu < 10
-  	!     START NEW TABLE AND CALCULATE P0 IF NECESSARY
-
-  	ELSE
-  	  IF (first) THEN
-  		m = MAX(1, INT(mu))
-  		l = 0
-  		p = EXP(-mu)
-  		q = p
-  		p0 = p
-  	  END IF
-
-  	!     STEP U. UNIFORM SAMPLE FOR INVERSION METHOD
-
-  	  DO
-  		CALL RANDOM_NUMBER(u)
-  		ival = 0
-  		IF (u <= p0) RETURN
-
-  	!     STEP T. TABLE COMPARISON UNTIL THE END PP(L) OF THE
-  	!             PP-TABLE OF CUMULATIVE POISSON PROBABILITIES
-  	!             (0.458=PP(9) FOR MU=10)
-
-  		IF (l == 0) GO TO 150
-  		j = 1
-  		IF (u > 0.458) j = MIN(l, m)
-  		DO k = j, l
-  		  IF (u <= pp(k)) GO TO 180
-  		END DO
-  		IF (l == 35) CYCLE
-
-  	!     STEP C. CREATION OF NEW POISSON PROBABILITIES P
-  	!             AND THEIR CUMULATIVES Q=PP(K)
-
-  		150 l = l + 1
-  		DO k = l, 35
-  		  p = p*mu / k
-  		  q = q + p
-  		  pp(k) = q
-  		  IF (u <= q) GO TO 170
-  		END DO
-  		l = 35
-  	  END DO
-
-  	  170 l = k
-  	  180 ival = k
-  	  RETURN
-  	END IF
-
-  	RETURN
-  	END subroutine random_Poisson
-
-
-
-  	FUNCTION random_normal() RESULT(fn_val)
-
-  	! Adapted from the following Fortran 77 code
-  	!      ALGORITHM 712, COLLECTED ALGORITHMS FROM ACM.
-  	!      THIS WORK PUBLISHED IN TRANSACTIONS ON MATHEMATICAL SOFTWARE,
-  	!      VOL. 18, NO. 4, DECEMBER, 1992, PP. 434-435.
-
-  	!  The function random_normal() returns a normally distributed pseudo-random
-  	!  number with zero mean and unit variance.
-
-  	!  The algorithm uses the ratio of uniforms method of A.J. Kinderman
-  	!  and J.F. Monahan augmented with quadratic bounding curves.
-          REAL(rtype) :: fn_val
-
-  	!     Local variables
-  	REAL(rtype)     :: s = 0.449871_rtype, t = -0.386595_rtype, a = 0.19600_rtype, b = 0.25472_rtype,           &
-  				r1 = 0.27597_rtype, r2 = 0.27846_rtype, u, v, x, y, q
-
-  	!     Generate P = (u,v) uniform in rectangle enclosing acceptance region
-
-  	DO
-  	  CALL RANDOM_NUMBER(u)
-  	  CALL RANDOM_NUMBER(v)
-  	  v = 1.7156_rtype * (v - 0.5_rtype )
-
-  	!     Evaluate the quadratic form
-  	  x = u - s
-  	  y = ABS(v) - t
-  	  q = x**2._rtype + y*(a*y - b*x)
-
-  	!     Accept P if inside inner ellipse
-  	  IF (q < r1) EXIT
-  	!     Reject P if outside outer ellipse
-  	  IF (q > r2) CYCLE
-  	!     Reject P if outside acceptance region
-  	  IF (v**2._rtype < -4.0_rtype*LOG(u)*u**2) EXIT
-  	END DO
-
-  	!     Return ratio of P's coordinates as the normal deviate
-  	fn_val = v/u
-  	RETURN
-
-  	END FUNCTION random_normal
-
-
-
-
-
-  	FUNCTION random_exponential() RESULT(fn_val)
-
-  	! Adapted from Fortran 77 code from the book:
-  	!     Dagpunar, J. 'Principles of random variate generation'
-  	!     Clarendon Press, Oxford, 1988.   ISBN 0-19-852202-9
-
-  	! FUNCTION GENERATES A RANDOM VARIATE IN [0,INFINITY) FROM
-  	! A NEGATIVE EXPONENTIAL DlSTRIBUTION WlTH DENSITY PROPORTIONAL
-  	! TO EXP(-random_exponential), USING INVERSION.
-          REAL(rtype)  :: fn_val
-
-  	!     Local variable
-  	REAL(rtype)  :: r
-
-  	DO
-  	  CALL RANDOM_NUMBER(r)
-  	  IF (r > 0._rtype) EXIT
-  	END DO
-
-  	fn_val = -LOG(r)
-  	RETURN
-
-  	END FUNCTION random_exponential
+!  subroutine Poisson(istart,iend,jstart,jend,mu,poi)
+!         ! Variable(s)
+!         integer, intent(in) :: istart,iend,jstart,jend
+!         real(rtype), dimension(istart:iend,jstart:jend),intent(in) :: mu
+!         integer, dimension(istart:iend,jstart:jend), intent(out) :: poi
+!
+!         integer :: i,j
+!
+!         ! do this only once
+!         ! call init_random_seed
+!
+!         do i=istart,iend
+!           do j=jstart,jend
+!             call   random_poisson(mu(i,j),.true.,poi(i,j))
+!           enddo
+!         enddo
+!
+!  end subroutine Poisson
+!
+!
+!  subroutine init_random_seed()
+!
+!         implicit none
+!         integer, allocatable :: seed(:)
+!         integer :: i, n, un, istat, dt(8), pid
+!         integer(itype) :: t
+!
+!         call random_seed(size = n)
+!         allocate(seed(n))
+!         ! First try if the OS provides a random number generator
+!         open(newunit=un, file="/dev/urandom", access="stream", &
+!         form="unformatted", action="read", status="old", iostat=istat)
+!         if (istat == 0) then
+!           read(un) seed
+!           close(un)
+!         else
+!         ! Fallback to XOR:ing the current time and pid. The PID is
+!         ! useful in case one launches multiple instances of the same
+!         ! program in parallel.
+!           call system_clock(t)
+!           if (t == 0) then
+!             call date_and_time(values=dt)
+!             t = (dt(1) - 1970) * 365_itype * 24 * 60 * 60 * 1000 &
+!               + dt(2) * 31_itype * 24 * 60 * 60 * 1000 &
+!               + dt(3) * 24_itype * 60 * 60 * 1000 &
+!               + dt(5) * 60 * 60 * 1000 &
+!               + dt(6) * 60 * 1000 + dt(7) * 1000 &
+!               + dt(8)
+!           end if
+!           !pid = getpid()
+!           ! for distributed memory jobs we need to fix this
+!           pid = 1
+!           t = ieor(t, int(pid, kind(t)))
+!           do i=1,n
+!             seed(i) = lcg(t)
+!           end do
+!         end if
+!         call random_seed(put=seed)
+!
+!         contains
+!         ! This simple PRNG might not be good enough for real work, but is
+!         ! sufficient for seeding a better PRNG.
+!         function lcg(s)
+!           integer :: lcg
+!           integer(itype) :: s
+!           if (s == 0) then
+!             s = 104729
+!           else
+!             s = mod(s, 4294967296_itype)
+!           end if
+!           s = mod(s * 279470273_itype, 4294967291_itype)
+!           lcg = int(mod(s, int(huge(0), itype)), kind(0))
+!         end function lcg
+!
+!  end subroutine init_random_seed
+!
+!
+!  subroutine random_Poisson(mu,first,ival)
+!  !**********************************************************************
+!  !     Translated to Fortran 90 by Alan Miller from:
+!  !                           RANLIB
+!  !
+!  !     Library of Fortran Routines for Random Number Generation
+!  !
+!  !                    Compiled and Written by:
+!  !
+!  !                         Barry W. Brown
+!  !                          James Lovato
+!  !
+!  !             Department of Biomathematics, Box 237
+!  !             The University of Texas, M.D. Anderson Cancer Center
+!  !             1515 Holcombe Boulevard
+!  !             Houston, TX      77030
+!  !
+!  ! This work was supported by grant CA-16672 from the National Cancer Institute.
+!
+!  !                    GENerate POIsson random deviate
+!  !                            Function
+!  ! Generates a single random deviate from a Poisson distribution with mean mu.
+!  !                            Arguments
+!  !     mu --> The mean of the Poisson distribution from which
+!  !            a random deviate is to be generated.
+!  !                              REAL mu
+!  !                              Method
+!  !     For details see:
+!  !               Ahrens, J.H. and Dieter, U.
+!  !               Computer Generation of Poisson Deviates
+!  !               From Modified Normal Distributions.
+!  !               ACM Trans. Math. Software, 8, 2
+!  !               (June 1982),163-179
+!  !     TABLES: COEFFICIENTS A0-A7 FOR STEP F. FACTORIALS FACT
+!  !     COEFFICIENTS A(K) - FOR PX = FK*V*V*SUM(A(K)*V**K)-DEL
+!  !     SEPARATION OF CASES A AND B
+!
+!  !     .. Scalar Arguments ..
+!  	REAL(rtype), INTENT(IN)    :: mu
+!  	LOGICAL, INTENT(IN) :: first
+!    INTEGER             :: ival
+!  !     ..
+!  !     .. Local Scalars ..
+!  	REAL(rtype)          :: b1, b2, c, c0, c1, c2, c3, del, difmuk, e, fk, fx, fy, g,  &
+!                      omega, px, py, t, u, v, x, xx
+!  	REAL(rtype), SAVE    :: s, d, p, q, p0
+!          INTEGER       :: j, k, kflag
+!  	LOGICAL, SAVE :: full_init
+!          INTEGER, SAVE :: l, m
+!  !     ..
+!  !     .. Local Arrays ..
+!  	REAL(rtype), SAVE    :: pp(35)
+!  !     ..
+!  !     .. Data statements ..
+!  	REAL(rtype), PARAMETER :: a0 = -.5_rtype, a1 = .3333333_rtype, a2 = -.2500068_rtype, a3 = .2000118_rtype,  &
+!                  a4 = -.1661269_rtype, a5 = .1421878_rtype, a6 = -.1384794_rtype,   &
+!                   a7 = .1250060_rtype
+!
+!  	REAL(rtype), PARAMETER :: fact(10) = (/ 1._rtype, 1._rtype, 2._rtype, 6._rtype, 24._rtype, 120._rtype, 720._rtype, 5040._rtype,  &
+!              40320._rtype, 362880._rtype /)
+!
+!  !     ..
+!  !     .. Executable Statements ..
+!     IF (mu > 10.0_rtype) THEN
+!  !     C A S E  A. (RECALCULATION OF S, D, L IF MU HAS CHANGED)
+!
+!    IF (first) THEN
+!  s = SQRT(mu)
+!  d = 6.0_rtype*mu*mu
+!
+!  !             THE POISSON PROBABILITIES PK EXCEED THE DISCRETE NORMAL
+!  !             PROBABILITIES FK WHENEVER K >= M(MU). L=IFIX(MU-1.1484)
+!  !             IS AN UPPER BOUND TO M(MU) FOR ALL MU >= 10 .
+!
+!  l = mu - 1.1484
+!  full_init = .false.
+!    END IF
+!
+!
+!  !     STEP N. NORMAL SAMPLE - random_normal() FOR STANDARD NORMAL DEVIATE
+!
+!  	  g = mu + s*random_normal()
+!  	  IF (g > 0.0_rtype) THEN
+!  		ival = g
+!
+!  	!     STEP I. IMMEDIATE ACCEPTANCE IF ival IS LARGE ENOUGH
+!
+!  		IF (ival>=l) RETURN
+!
+!  	!     STEP S. SQUEEZE ACCEPTANCE - SAMPLE U
+!
+!  		fk = ival
+!  		difmuk = mu - fk
+!  		CALL RANDOM_NUMBER(u)
+!  		IF (d*u >= difmuk*difmuk*difmuk) RETURN
+!  	  END IF
+!
+!  	!     STEP P. PREPARATIONS FOR STEPS Q AND H.
+!  	!             (RECALCULATIONS OF PARAMETERS IF NECESSARY)
+!  	!             .3989423=(2*PI)**(-.5)  .416667E-1=1./24.  .1428571=1./7.
+!  	!             THE QUANTITIES B1, B2, C3, C2, C1, C0 ARE FOR THE HERMITE
+!  	!             APPROXIMATIONS TO THE DISCRETE NORMAL PROBABILITIES FK.
+!  	!             C=.1069/MU GUARANTEES MAJORIZATION BY THE 'HAT'-FUNCTION.
+!
+!  	  IF (.NOT. full_init) THEN
+!  		omega = .3989423_rtype/s
+!  		b1 = .4166667E-1_rtype/mu
+!  		b2 = .3_rtype*b1*b1
+!  		c3 = .1428571_rtype*b1*b2
+!  		c2 = b2 - 15._rtype*c3
+!  		c1 = b1 - 6._rtype*b2 + 45._rtype*c3
+!  		c0 = 1._rtype - b1 + 3._rtype*b2 - 15._rtype*c3
+!  		c = .1069_rtype/mu
+!  		full_init = .true.
+!  	  END IF
+!
+!  	  IF (g < 0.0_rtype) GO TO 50
+!
+!  	!             'SUBROUTINE' F IS CALLED (KFLAG=0 FOR CORRECT RETURN)
+!
+!  	  kflag = 0
+!  	  GO TO 70
+!
+!  	!     STEP Q. QUOTIENT ACCEPTANCE (RARE CASE)
+!
+!  	  40 IF (fy-u*fy <= py*EXP(px-fx)) RETURN
+!
+!  	!     STEP E. EXPONENTIAL SAMPLE - random_exponential() FOR STANDARD EXPONENTIAL
+!  	!             DEVIATE E AND SAMPLE T FROM THE LAPLACE 'HAT'
+!  	!             (IF T <= -.6744 THEN PK < FK FOR ALL MU >= 10.)
+!
+!  	  50 e = random_exponential()
+!  	  CALL RANDOM_NUMBER(u)
+!  	  u = u + u - 1
+!  	  t = 1.8_rtype + SIGN(e, u)
+!  	  IF (t <= (-.6744_rtype)) GO TO 50
+!  	  ival = mu + s*t
+!  	  fk = ival
+!  	  difmuk = mu - fk
+!
+!  	!             'SUBROUTINE' F IS CALLED (KFLAG=1 FOR CORRECT RETURN)
+!
+!  	  kflag = 1
+!  	  GO TO 70
+!
+!  	!     STEP H. HAT ACCEPTANCE (E IS REPEATED ON REJECTION)
+!
+!  	  60 IF (c*ABS(u) > py*EXP(px+e) - fy*EXP(fx+e)) GO TO 50
+!  	  RETURN
+!
+!  	!     STEP F. 'SUBROUTINE' F. CALCULATION OF PX, PY, FX, FY.
+!  	!             CASE ival < 10 USES FACTORIALS FROM TABLE FACT
+!
+!  	  70 IF (ival>=10) GO TO 80
+!  	  px = -mu
+!  	  py = mu**ival/fact(ival+1)
+!  	  GO TO 110
+!
+!  	!             CASE ival >= 10 USES POLYNOMIAL APPROXIMATION
+!  	!             A0-A7 FOR ACCURACY WHEN ADVISABLE
+!  	!             .8333333E-1=1./12.  .3989423=(2*PI)**(-.5)
+!
+!  	  80 del = .8333333E-1_rtype/fk
+!  	  del = del - 4.8_rtype*del*del*del
+!  	  v = difmuk/fk
+!  	  IF (ABS(v)>0.25_rtype) THEN
+!  		px = fk*LOG(1._rtype + v) - difmuk - del
+!  	  ELSE
+!  		px = fk*v*v* (((((((a7*v+a6)*v+a5)*v+a4)*v+a3)*v+a2)*v+a1)*v+a0) - del
+!  	  END IF
+!  	  py = .3989423_rtype/SQRT(fk)
+!  	  110 x = (0.5_rtype - difmuk)/s
+!  	  xx = x*x
+!  	  fx = -0.5_rtype*xx
+!  	  fy = omega* (((c3*xx + c2)*xx + c1)*xx + c0)
+!  	  IF (kflag <= 0) GO TO 40
+!  	  GO TO 60
+!
+!  	!---------------------------------------------------------------------------
+!  	!     C A S E  B.    mu < 10
+!  	!     START NEW TABLE AND CALCULATE P0 IF NECESSARY
+!
+!  	ELSE
+!  	  IF (first) THEN
+!  		m = MAX(1, INT(mu))
+!  		l = 0
+!  		p = EXP(-mu)
+!  		q = p
+!  		p0 = p
+!  	  END IF
+!
+!  	!     STEP U. UNIFORM SAMPLE FOR INVERSION METHOD
+!
+!  	  DO
+!  		CALL RANDOM_NUMBER(u)
+!  		ival = 0
+!  		IF (u <= p0) RETURN
+!
+!  	!     STEP T. TABLE COMPARISON UNTIL THE END PP(L) OF THE
+!  	!             PP-TABLE OF CUMULATIVE POISSON PROBABILITIES
+!  	!             (0.458=PP(9) FOR MU=10)
+!
+!  		IF (l == 0) GO TO 150
+!  		j = 1
+!  		IF (u > 0.458) j = MIN(l, m)
+!  		DO k = j, l
+!  		  IF (u <= pp(k)) GO TO 180
+!  		END DO
+!  		IF (l == 35) CYCLE
+!
+!  	!     STEP C. CREATION OF NEW POISSON PROBABILITIES P
+!  	!             AND THEIR CUMULATIVES Q=PP(K)
+!
+!  		150 l = l + 1
+!  		DO k = l, 35
+!  		  p = p*mu / k
+!  		  q = q + p
+!  		  pp(k) = q
+!  		  IF (u <= q) GO TO 170
+!  		END DO
+!  		l = 35
+!  	  END DO
+!
+!  	  170 l = k
+!  	  180 ival = k
+!  	  RETURN
+!  	END IF
+!
+!  	RETURN
+!  	END subroutine random_Poisson
+!
+!
+!
+!  	FUNCTION random_normal() RESULT(fn_val)
+!
+!  	! Adapted from the following Fortran 77 code
+!  	!      ALGORITHM 712, COLLECTED ALGORITHMS FROM ACM.
+!  	!      THIS WORK PUBLISHED IN TRANSACTIONS ON MATHEMATICAL SOFTWARE,
+!  	!      VOL. 18, NO. 4, DECEMBER, 1992, PP. 434-435.
+!
+!  	!  The function random_normal() returns a normally distributed pseudo-random
+!  	!  number with zero mean and unit variance.
+!
+!  	!  The algorithm uses the ratio of uniforms method of A.J. Kinderman
+!  	!  and J.F. Monahan augmented with quadratic bounding curves.
+!          REAL(rtype) :: fn_val
+!
+!  	!     Local variables
+!  	REAL(rtype)     :: s = 0.449871_rtype, t = -0.386595_rtype, a = 0.19600_rtype, b = 0.25472_rtype,           &
+!  				r1 = 0.27597_rtype, r2 = 0.27846_rtype, u, v, x, y, q
+!
+!  	!     Generate P = (u,v) uniform in rectangle enclosing acceptance region
+!
+!  	DO
+!  	  CALL RANDOM_NUMBER(u)
+!  	  CALL RANDOM_NUMBER(v)
+!  	  v = 1.7156_rtype * (v - 0.5_rtype )
+!
+!  	!     Evaluate the quadratic form
+!  	  x = u - s
+!  	  y = ABS(v) - t
+!  	  q = x**2._rtype + y*(a*y - b*x)
+!
+!  	!     Accept P if inside inner ellipse
+!  	  IF (q < r1) EXIT
+!  	!     Reject P if outside outer ellipse
+!  	  IF (q > r2) CYCLE
+!  	!     Reject P if outside acceptance region
+!  	  IF (v**2._rtype < -4.0_rtype*LOG(u)*u**2) EXIT
+!  	END DO
+!
+!  	!     Return ratio of P's coordinates as the normal deviate
+!  	fn_val = v/u
+!  	RETURN
+!
+!  	END FUNCTION random_normal
+!
+!
+!
+!
+!
+!  	FUNCTION random_exponential() RESULT(fn_val)
+!
+!  	! Adapted from Fortran 77 code from the book:
+!  	!     Dagpunar, J. 'Principles of random variate generation'
+!  	!     Clarendon Press, Oxford, 1988.   ISBN 0-19-852202-9
+!
+!  	! FUNCTION GENERATES A RANDOM VARIATE IN [0,INFINITY) FROM
+!  	! A NEGATIVE EXPONENTIAL DlSTRIBUTION WlTH DENSITY PROPORTIONAL
+!  	! TO EXP(-random_exponential), USING INVERSION.
+!          REAL(rtype)  :: fn_val
+!
+!  	!     Local variable
+!  	REAL(rtype)  :: r
+!
+!  	DO
+!  	  CALL RANDOM_NUMBER(r)
+!  	  IF (r > 0._rtype) EXIT
+!  	END DO
+!
+!  	fn_val = -LOG(r)
+!  	RETURN
+!
+!  	END FUNCTION random_exponential
 
 end module edmf
 
