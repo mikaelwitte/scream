@@ -39,7 +39,8 @@ contains
   !  Eddy-diffusivity mass-flux routine                                                                               !
   ! =============================================================================== !
 
-  subroutine integrate_mf(shcol, nz, nzi, dt,                      & ! input
+  subroutine integrate_mf(do_condensation, exner,                  & ! input
+                 shcol, nz, nzi, dt,                               & ! input
                  zt_in, zi_in, dz_zt_in, p_in,                     & ! input - MKW 20200804 removed iex and dz_zi_in
                  nup,    u_in,   v_in,   thl_in,   thv_in, qt_in,  & ! input
                  ust,    wthl,   wqt,    pblh,     qc_in,          & ! input
@@ -73,8 +74,12 @@ contains
   ! - mass flux variables are computed on edges (i.e. momentum grid):
   !  upa,upw,upqt,... 1:nzi
   !  dry_a,moist_a,dry_w,moist_w, ... 1:nzi
-       ! Variable(s)
+
+  ! INPUTS
+       ! physics controls
+       logical, intent(in) :: do_condensation
        integer, intent(in) :: shcol,nz,nzi,nup
+       real(rtype), dimension(shcol,nz),  intent(in) :: exner
        real(rtype), dimension(shcol,nz),  intent(in) :: zt_in,dz_zt_in,p_in !,iex_in
        ! MKW TODO: remove zi_in as an argument, was only needed for linear_interp calls that were removed on 2020/09/01
        real(rtype), dimension(shcol,nzi), intent(in) :: zi_in
@@ -84,20 +89,19 @@ contains
        real(rtype), dimension(shcol), intent(in) :: pblh
        real(rtype), value :: dt ! only needed for random number generator
 
-  ! outputs - updraft properties
+  ! OUTPUTS
+  ! updraft properties
        real(rtype),dimension(shcol,nzi), intent(out) :: &
               dry_a_out, moist_a_out, dry_w_out, moist_w_out,                &
               dry_qt_out, moist_qt_out, dry_thl_out, moist_thl_out,          &
               dry_u_out,  moist_u_out,  dry_v_out,   moist_v_out,    moist_qc_out
-  ! outputs - variables needed for diffusion solver
+  ! variables needed for diffusion solver
        real(rtype),dimension(shcol,nzi), intent(out) :: &
               ae_out,aw_out,awthv_out,awthl_out,awqt_out,awql_out,awqi_out,awu_out,awv_out
-  ! outputs - flux diagnostics
+  ! flux diagnostics - currently diagnosed elsewhere
        !real(rtype),dimension(shcol,nzi), intent(out) :: thlflx_out, qtflx_out
 
   ! INTERNAL VARIABLES
-  ! physics controls
-       logical, parameter :: do_condensation = .false.
   ! flipped variables (i.e. index 1 is at surface)
        real(rtype), dimension(shcol,nz)  :: zt, dz_zt, iexner, p
        real(rtype), dimension(shcol,nzi) :: zi
@@ -173,8 +177,7 @@ contains
        if (k<nzi) then
          zt(:,k) = zt_in(:,nz-k+1)
          dz_zt(:,k) = dz_zt_in(:,nz-k+1)
-         ! iexner(:,k) = iex_in(:,nz-k+1)
-         p(:,k) = p_in(:,nz-k+1)
+         exner_i(:,k) = exner(:,nz-k+1)
 
          u(:,k) = u_in(:,nz-k+1)
          v(:,k) = v_in(:,nz-k+1)
@@ -186,6 +189,7 @@ contains
 
        ! momentum altitude grid
        zi(:,k) = zi_in(:,nzi-k+1)
+       p(:,k) = p_in(:,nzi-k+1)
      enddo
 
 
@@ -206,7 +210,6 @@ contains
      moist_qc  = 0._rtype
   ! outputs - variables needed for solver
      aw        = 0._rtype
-     ! aws       = 0._rtype
      awthv     = 0._rtype
      awthl     = 0._rtype
      awqt      = 0._rtype
@@ -247,7 +250,7 @@ contains
 
        ! if surface buoyancy is positive then do mass-flux, otherwise not
        if (wthv>0.0) then
-         dzt(:) = dz_zt(j,:)
+         dzt = dz_zt(j,:)
 
          ! compute entrainment coefficient
          ! get dz/L0
@@ -258,9 +261,11 @@ contains
          enddo
 
          ! get poisson P(dz/L0)
-         !enti(:,:) = 4
+         !if (debug) then
+         !   enti(:,:) = 4
+         !else
          call poisson( nz, nup, entf, enti, thl(j,nz))
-         ! call Poisson( 2, nz, 1, nup, entf, enti)
+         !endif
 
          ! entrainment: Ent=Ent0/dz*P(dz/L0)
          do i=1,nup
@@ -274,10 +279,6 @@ contains
          wstar  = max( wstarmin, (ggr/thv(j,1)*wthv*pbj)**(1._rtype/3._rtype) )
          qstar  = wqt(j) / wstar
          thstar = wthl(j) / wstar
-
-  !       print*,'wstar=',wstar
-  !       print*,'qstar=',qstar
-  !       print*,'thstar=',thstar
 
          sigmaw  = 0.572_rtype * wstar     / 1._rtype
          sigmaqt = 2.89_rtype * abs(qstar) / 1._rtype
@@ -439,8 +440,6 @@ contains
              aw  (j,k) = aw  (j,k) + upa(k,i)*upw(k,i)
              awu (j,k) = awu (j,k) + upa(k,i)*upw(k,i)*upu(k,i)
              awv (j,k) = awv (j,k) + upa(k,i)*upw(k,i)*upv(k,i)
-             !aws (k) = aws (k) + upa(k,i)*upw(k,i)*upth(k,i)*cpair
-             !aws (k) = aws (k) + upa(k,i)*upw(k,i)*ups(k,i)
              awthv(j,k)= awthv(j,k)+ upa(k,i)*upw(k,i)*upthv(k,i)
              awthl(j,k)= awthl(j,k)+ upa(k,i)*upw(k,i)*upthl(k,i) !*cpair/iexh
              awth(j,k) = awth(j,k) + upa(k,i)*upw(k,i)*upth(k,i) !*cpair/iexh
@@ -460,8 +459,6 @@ contains
          !thlflx(j,1) = 0._rtype
          !!sflx(kts)  = 0.
          !qtflx(j,1) = 0._rtype
-
-         !print*,'max(1-ae)=',maxval(1._rtype-ae(j,:))
 
        end if  ! ( wthv > 0.0 )
      end do ! j=1,shcol
@@ -606,14 +603,13 @@ contains
     integer :: i,k
 
     ! MKW TODO: SHOC has separate subroutines for lower (k=nlevi) and
-    !   upper (k=1) boundary conditions. Make these off later if SCREAM
+    !   upper (k=1) boundary conditions. Make these later if SCREAM
     !   folks want that. Should be very quick.
 
     ! diagnose MF fluxes
     varflx(:shcol,1) = 0._rtype;
     do k=2,nlev
       do i=1,shcol
-        ! MKW NOTE: we may change this to
         varflx(i,k)= awvar(i,k) - aw(i,k)*var(i,k)
       end do
     end do

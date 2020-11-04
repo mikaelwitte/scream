@@ -810,8 +810,9 @@ subroutine update_prognostics_implicit( &
          dtime,dz_zt,dz_zi,rho_zt,&       ! Input
          zt_grid,zi_grid,tk,tkh,&         ! Input
          uw_sfc,vw_sfc,wthl_sfc,wqw_sfc,& ! Input
-         do_mf,mf_ae,mf_aw,mf_awu,mf_awv,&    ! EDMF Input
-         mf_awthl,mf_awqt,&                 ! EDMF Input
+         wtracer_sfc,&                    ! Input
+         do_mf,mf_ae,mf_aw,mf_awu,mf_awv,&! EDMF Input
+         mf_awthl,mf_awqt,&               ! EDMF Input
          thetal,qw,tracer,tke,&           ! Input/Output
          u_wind,v_wind)                   ! Input/Output
 
@@ -1212,19 +1213,10 @@ subroutine diag_second_shoc_moments(&
   real(rtype), intent(in) :: uw_sfc(shcol)
   ! Surface momentum flux (v-direction) [m2/s2]
   real(rtype), intent(in) :: vw_sfc(shcol)
+
   ! Begin EDMF-specific inputs
   ! Include MF in fluxes?
   logical,     intent(in) :: do_mf
-  ! EDMF environment area [-]
-  real(rtype), intent(in) :: ae(shcol,nlevi)
-  ! EDMF area-weighted plume mean updraft speed [m/s]
-  real(rtype), intent(in) :: aw(shcol,nlevi)
-  ! EDMF area-weighted plume temperature transport [Km/s]
-  real(rtype), intent(in) :: awthl(shcol,nlevi)
-  ! EDMF area_weighted plume moisture transport [kgm/kgs]
-  real(rtype), intent(in) :: awqt(shcol,nlevi)
-
-  ! Begin EDMF-specific inputs
   ! EDMF environment area [-]
   real(rtype), intent(in) :: ae(shcol,nlevi)
   ! EDMF area-weighted plume mean updraft speed [m/s]
