@@ -7,7 +7,7 @@ module edmf
   
   implicit none
 
-  public :: integrate_mf, init_random_seed, calc_mf_vertflux, compute_tmpi3
+  public :: integrate_mf, calc_mf_vertflux, compute_tmpi3
 
   private
 

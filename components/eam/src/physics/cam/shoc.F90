@@ -14,7 +14,7 @@ module shoc
 
   use physics_utils, only: rtype, rtype8, itype, btype
   use scream_abortutils, only: endscreamrun
-  use edmf, only: integrate_mf, init_random_seed, calc_mf_vertflux, compute_tmpi3
+  use edmf, only: integrate_mf, calc_mf_vertflux, compute_tmpi3
 
 ! Bit-for-bit math functions.
 #ifdef SCREAM_CONFIG_IS_CMAKE
@@ -445,10 +445,9 @@ subroutine shoc_main ( &
 
     ! If using EDMF plumes, diagnose plume properties here
 
-    nup = 100
+    nup = 10
     if (do_edmf) then
        do_mfdif = .true.
-       call init_random_seed
        call integrate_mf(&
                edmf_condensation,exner,&                 ! Input flag for condensation subroutine
                shcol, nlev, nlevi, dtime,&               ! Input
@@ -496,103 +495,19 @@ subroutine shoc_main ( &
        mf_awv = 0._rtype
     endif
 
-    ! Calculate the total buoyancy flux: wthv_tot = mf_ae*wthv_sec + mf_awthv - mf_aw*thv_zi
-    ! needed for the TKE equation
-    ! We don't need to do anything if EDMF is off because then wthv_sec_tot == wthv_sec
-    ! MJ: We can interpolate mf_ae, mf_aw and mf_awthv to the midpoint grid. Now we are doing upwind
-    call wthv_mf(&
-       shcol,nlev,nlevi,&             ! Input
-       wthv_sec,thv,&                 ! Input
-       s_ae, s_aw, s_awthv,&          ! Input
-       wthv_sec_tot)
-
-     call linear_interp(zt_grid,zi_grid,thv,thv_zi,nlev,nlevi,shcol,0._rtype)
-     call calc_mf_vertflux(shcol,nlev,nlevi,mf_aw,mf_awthv,thv_zi,mf_thvflx)
-
-     ! Update the turbulent length scale
-     call shoc_length(&
-        shcol,nlev,nlevi,&                ! Input
-        host_dx,host_dy,pblh,&            ! Input
-        tke,zt_grid,zi_grid,dz_zt,dz_zi,& ! Input
-        thetal,wthv_sec,thv,&             ! Input
-        brunt,shoc_mix)                   ! Output
-
-    ! If using EDMF plumes, diagnose plume properties here
-    nup = 100
-    if (do_edmf) then
-       do_mfdif = .true.
-       call init_random_seed
-       call integrate_mf(&
-               shcol, nlev, nlevi, dtime,&               ! Input
-               zt_grid, zi_grid, dz_zt, pres,&           ! Input
-               nup, u_wind, v_wind, thetal, thv, qw,&    ! Input
-               ustar, wthl_sfc, wqw_sfc, pblh, shoc_ql,& ! Input
-               mf_dry_a,   mf_moist_a, &                 ! Output - updraft diagnostics
-               mf_dry_w,   mf_moist_w, &                 ! Output - updraft diagnostics
-               mf_dry_qt,  mf_moist_qt, &                ! Output - updraft diagnostics
-               mf_dry_thl, mf_moist_thl, &               ! Output - updraft diagnostics
-               mf_dry_u,   mf_moist_u,  &                ! Output - updraft diagnostics
-               mf_dry_v,   mf_moist_v, &                 ! Output - updraft diagnostics
-                           mf_moist_qc, &                ! Output - updraft diagnostics
-               s_ae,       s_aw, &                       ! Output - for diffusion solver
-               s_awthv, &                                ! Output for total wthv
-               s_awthl,    s_awqt, &                     ! Output - for diffusion solver
-               s_awql,     s_awqi, &                     ! Output - for diffusion solver/PDF closure but not coupled yet
-               s_awu,      s_awv )                       ! Output - for diffusion solver/PDF closure but not coupled yet
-               ! MKW NOTE: mf_thlflx and mf_qtflx are no longer calculated here
-    else
-       do_mfdif = .false.
-
-       mf_dry_a = 0._rtype
-       mf_dry_w = 0._rtype
-       mf_dry_qt = 0._rtype
-       mf_dry_thl = 0._rtype
-       mf_dry_u = 0._rtype
-       mf_dry_v = 0._rtype
-
-       mf_moist_a = 0._rtype
-       mf_moist_w = 0._rtype
-       mf_moist_qt = 0._rtype
-       mf_moist_thl = 0._rtype
-       mf_moist_u = 0._rtype
-       mf_moist_v = 0._rtype
-       mf_moist_qc = 0._rtype
-
-       s_ae = 1._rtype
-       s_aw = 0._rtype
-       s_awthv = 0._rtype
-       s_awthl = 0._rtype
-       s_awqt = 0._rtype
-       s_awql = 0._rtype
-       s_awqi = 0._rtype
-       s_awu = 0._rtype
-       s_awv = 0._rtype
-    endif
-
-    ! Calculate the total buoyancy flux: wthv_tot = s_ae*wthv_sec + s_awthv - s_aw*thv_zi
-    ! needed for the TKE equation
-    call wthv_mf(&
-       shcol,nlev,nlevi,&             ! Input
-       wthv_sec,thv,&                 ! Input
-       s_ae, s_aw, s_awthv,&          ! Input
-       wthv_sec_tot)
-    if (do_edmf) then !.and..not.do_mfdif) then
-       wthv_sec_tot = wthv_sec
-    endif 
-       
     ! Update the turbulent length scale
     call shoc_length(&
        shcol,nlev,nlevi,tke,&               ! Input
        host_dx,host_dy,pblh,&               ! Input
-       zt_grid,zi_grid,dz_zt,dz_zi,&        ! Input
-       thetal,wthv_sec_tot,thv,&            ! Input
+       tke,zt_grid,zi_grid,dz_zt,dz_zi,&        ! Input
+       thetal,wthv_sec,thv,&            ! Input
        brunt,shoc_mix)                      ! Output
         
     ! Advance the SGS TKE equation
     ! MKW TODO: add MF buoyancy flux to inputs
     call shoc_tke(&
        shcol,nlev,nlevi,dtime,&             ! Input
-       wthv_sec_tot,shoc_mix,&              ! Input
+       wthv_sec,shoc_mix,&              ! Input
        dz_zi,dz_zt,pres,&                   ! Input
        u_wind,v_wind,brunt,obklen,&         ! Input
        zt_grid,zi_grid,pblh,&               ! Input
@@ -1294,16 +1209,6 @@ subroutine diag_second_shoc_moments(&
   ! EDMF area_weighted plume moisture transport [kgm/kgs]
   real(rtype), intent(in) :: awqt(shcol,nlevi)
 
-  ! Begin EDMF-specific inputs
-  ! EDMF environment area [-]
-  real(rtype), intent(in) :: ae(shcol,nlevi)
-  ! EDMF area-weighted plume mean updraft speed [m/s]
-  real(rtype), intent(in) :: aw(shcol,nlevi)
-  ! EDMF area-weighted plume temperature transport [Km/s]
-  real(rtype), intent(in) :: awthl(shcol,nlevi)
-  ! EDMF area_weighted plume moisture transport [kgm/kgs]
-  real(rtype), intent(in) :: awqt(shcol,nlevi)
-
 ! OUTPUT VARIABLES
   ! second order liquid wat. potential temp. [K^2]
   real(rtype), intent(out) :: thl_sec(shcol,nlevi)
@@ -1648,11 +1553,6 @@ subroutine diag_second_moments(&
   logical :: do_total_fluxes
   !Dummy variable
   real(rtype) :: aw_dummy(shcol,nlevi)
-
-  ! Determines if total fluxes (ED+MF) are computed or not
-  logical :: do_total_fluxes
-  !Dummy variable
-  real(rtype) :: aw_dummy(shcol,nlevi)
   
   ! Interpolate some variables from the midpoint grid to the interface grid
   call linear_interp(zt_grid,zi_grid,isotropy,isotropy_zi,nlev,nlevi,shcol,0._rtype)
@@ -1692,17 +1592,9 @@ subroutine diag_second_moments(&
          wthl_sec)                                ! Input/Output
 
   call calc_mf_vertflux(shcol,nlev,nlevi,aw,awthl,thl_zi,mf_thlflx)
-  do p=1,shcol
-     if (maxval(abs(mf_thlflx(p,:)))>3.0_rtype) print *,'wthl>3!!!'
-  enddo
-
-  ! Calculate vertical flux for moisture
-  do_total_fluxes = .true.
-=======
 
   ! Calculate vertical flux for moisture
   do_total_fluxes = do_edmf !.true.
->>>>>>> origin/mj_02nov20_rebased
   call calc_shoc_vertflux(&
          shcol,nlev,nlevi,tkh_zi,dz_zi,qw,&       ! Input
          zt_grid,zi_grid,ae,aw,awqt,&             ! Input
