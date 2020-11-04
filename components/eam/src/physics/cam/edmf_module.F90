@@ -130,7 +130,6 @@ contains
 
        real(rtype) :: iexh
        real(rtype) :: dzt(nz)!, dzi(nzi)
-       real(rtype) :: thl_zi(nzi),qt_zi(nzi)
 
   ! w parameters
        real(rtype),parameter :: &
@@ -251,10 +250,6 @@ contains
        if (wthv>0.0) then
          dzt = dz_zt(j,:)
 
-         ! interpolate thl and qt to interface grid
-         call linear_interp(zt,zi,thl(j,:),thl_zi,nz,nzi,shcol,0._rtype)
-         call linear_interp(zt,zi,qt(j,:),qt_zi,nz,nzi,shcol,0._rtype)
-
          ! compute entrainment coefficient
          ! get dz/L0
          do i=1,nup
@@ -262,6 +257,7 @@ contains
              entf(k,i) = dzt(k) / L0
            enddo
          enddo
+
          ! get Poisson P(dz/L0)
          call Poisson( 2, nz, 1, nup, entf, enti)
 
@@ -276,10 +272,6 @@ contains
          wstar  = max( wstarmin, (ggr/thv(j,1)*wthv*pbj)**(1._rtype/3._rtype) )
          qstar  = wqt(j) / wstar
          thstar = wthl(j) / wstar
-
-  !       print*,'wstar=',wstar
-  !       print*,'qstar=',qstar
-  !       print*,'thstar=',thstar
 
          sigmaw  = 0.572_rtype * wstar     / 1._rtype
          sigmaqt = 2.89_rtype * abs(qstar) / 1._rtype
