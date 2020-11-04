@@ -3,9 +3,8 @@ module edmf
   use physics_utils, only: rtype, rtype8, itype!, btype ! MKW: btype not currently used
 
   use physconst,     only: rgas => rair, cp => cpair, ggr => gravit, &
-                           lcond => latvap, lice => latice, eps => zvir
-  ! use shoc,          only: linear_interp
-
+                           lcond => latvap, lice => latice, eps => zvir  !  ! (rh2o/rair) - 1
+  
   implicit none
 
   public :: integrate_mf, init_random_seed, calc_mf_vertflux, compute_tmpi3
@@ -39,22 +38,23 @@ contains
   !  Eddy-diffusivity mass-flux routine                                                                               !
   ! =============================================================================== !
 
-  subroutine integrate_mf(shcol, nz, nzi, dt,                      & ! input
+  subroutine integrate_mf(edmf_condensation, exner,                &
+                 shcol, nz, nzi, dt,                               & ! input
                  zt_in, zi_in, dz_zt_in, p_in,                     & ! input - MKW 20200804 removed iex and dz_zi_in
                  nup,    u_in,   v_in,   thl_in,   thv_in, qt_in,  & ! input
                  ust,    wthl,   wqt,    pblh,     qc_in,          & ! input
-                 dry_a_out,   moist_a_out,                         & ! output: updraft properties for diagnostics
-                 dry_w_out,   moist_w_out,                         & ! output: updraft properties for diagnostics
-                 dry_qt_out,  moist_qt_out,                        & ! output: updraft properties for diagnostics
-                 dry_thl_out, moist_thl_out,                       & ! output: updraft properties for diagnostics
-                 dry_u_out,   moist_u_out,                         & ! output: updraft properties for diagnostics
-                 dry_v_out,   moist_v_out,                         & ! output: updraft properties for diagnostics
-                              moist_qc_out,                        & ! output: updraft properties for diagnostics
-                 ae_out, aw_out,                                   & ! output: variables needed for  diffusion solver
-                 awthl_out, awqt_out,                              & ! output: variables needed for  diffusion solver
-                 awthv_out,                                        & ! output: variable needed for TKE solver
-                 awql_out, awqi_out,                               & ! output: variables needed for  diffusion solver
-                 awu_out, awv_out)                                   ! output: variables needed for  diffusion solver
+                 mf_dry_a,   mf_moist_a,                         & ! output: updraft properties for diagnostics
+                 mf_dry_w,   mf_moist_w,                         & ! output: updraft properties for diagnostics
+                 mf_dry_qt,  mf_moist_qt,                        & ! output: updraft properties for diagnostics
+                 mf_dry_thl, mf_moist_thl,                       & ! output: updraft properties for diagnostics
+                 mf_dry_u,   mf_moist_u,                         & ! output: updraft properties for diagnostics
+                 mf_dry_v,   mf_moist_v,                         & ! output: updraft properties for diagnostics
+                              mf_moist_qc,                        & ! output: updraft properties for diagnostics
+                 mf_ae, mf_aw,                                   & ! output: variables needed for  diffusion solver
+                 mf_awthv,                                        & ! output: variable needed for total wthv
+                 mf_awthl, mf_awqt,                              & ! output: variables needed for  diffusion solver
+                 mf_awql, mf_awqi,                               & ! output: variables needed for  diffusion solver
+                 mf_awu, mf_awv)                                   ! output: variables needed for  diffusion solver
                  !thlflx_out, qtflx_out )                             ! output: MF turbulent flux diagnostics
 
   ! Original author: Marcin Kurowski, JPL
@@ -73,11 +73,13 @@ contains
   ! - mass flux variables are computed on edges (i.e. momentum grid):
   !  upa,upw,upqt,... 1:nzi
   !  dry_a,moist_a,dry_w,moist_w, ... 1:nzi
+       ! Logical variable
+       logical, intent(in) :: edmf_condensation
        ! Variable(s)
        integer, intent(in) :: shcol,nz,nzi,nup
-       real(rtype), dimension(shcol,nz),  intent(in) :: zt_in,dz_zt_in,p_in !,iex_in
-       ! MKW TODO: remove zi_in as an argument, was only needed for linear_interp calls that were removed on 2020/09/01
-       real(rtype), dimension(shcol,nzi), intent(in) :: zi_in
+       real(rtype), dimension(shcol,nz),  intent(in) :: exner
+       real(rtype), dimension(shcol,nz),  intent(in) :: zt_in,dz_zt_in !,p_in !,iex_in
+       real(rtype), dimension(shcol,nzi), intent(in) :: zi_in,p_in 
        real(rtype), dimension(shcol,nz),  intent(in) :: u_in,v_in,thl_in,qt_in,qc_in,thv_in  ! all on thermodynamic/midpoint levels
 
        real(rtype), dimension(shcol), intent(in) :: ust, wthl, wqt
@@ -86,18 +88,18 @@ contains
 
   ! outputs - updraft properties
        real(rtype),dimension(shcol,nzi), intent(out) :: &
-              dry_a_out, moist_a_out, dry_w_out, moist_w_out,                &
-              dry_qt_out, moist_qt_out, dry_thl_out, moist_thl_out,          &
-              dry_u_out,  moist_u_out,  dry_v_out,   moist_v_out,    moist_qc_out
+              mf_dry_a, mf_moist_a, mf_dry_w, mf_moist_w,                &
+              mf_dry_qt, mf_moist_qt, mf_dry_thl, mf_moist_thl,          &
+              mf_dry_u,  mf_moist_u,  mf_dry_v,   mf_moist_v,    mf_moist_qc
   ! outputs - variables needed for diffusion solver
        real(rtype),dimension(shcol,nzi), intent(out) :: &
-              ae_out,aw_out,awthv_out,awthl_out,awqt_out,awql_out,awqi_out,awu_out,awv_out
+              mf_ae,mf_aw,mf_awthv,mf_awthl,mf_awqt,mf_awql,mf_awqi,mf_awu,mf_awv
   ! outputs - flux diagnostics
        !real(rtype),dimension(shcol,nzi), intent(out) :: thlflx_out, qtflx_out
 
   ! INTERNAL VARIABLES
   ! flipped variables (i.e. index 1 is at surface)
-       real(rtype), dimension(shcol,nz)  :: zt, dz_zt, iexner, p
+       real(rtype), dimension(shcol,nz)  :: zt, dz_zt, iexner, p, exner_i
        real(rtype), dimension(shcol,nzi) :: zi
        real(rtype), dimension(shcol,nz)  :: u,v,thl,qt,qc,thv
   ! flipped updraft properties (i.e. index 1 is at surface)
@@ -128,6 +130,7 @@ contains
 
        real(rtype) :: iexh
        real(rtype) :: dzt(nz)!, dzi(nzi)
+       real(rtype) :: thl_zi(nzi),qt_zi(nzi)
 
   ! w parameters
        real(rtype),parameter :: &
@@ -172,7 +175,8 @@ contains
          zt(:,k) = zt_in(:,nz-k+1)
          dz_zt(:,k) = dz_zt_in(:,nz-k+1)
          ! iexner(:,k) = iex_in(:,nz-k+1)
-         p(:,k) = p_in(:,nz-k+1)
+         exner_i(:,k) = exner(:,nz-k+1)
+         !p(:,k) = p_in(:,nz-k+1)
 
          u(:,k) = u_in(:,nz-k+1)
          v(:,k) = v_in(:,nz-k+1)
@@ -184,6 +188,7 @@ contains
 
        ! momentum altitude grid
        zi(:,k) = zi_in(:,nzi-k+1)
+       p(:,k) = p_in(:,nzi-k+1)
      enddo
 
 
@@ -220,7 +225,6 @@ contains
   ! this is the environmental area - by default 1.
      ae = 1._rtype
 
-
   ! START MAIN COMPUTATION
   ! NOTE: SHOC does not invert the vertical coordinate, which by default is ordered from lowest to highest pressure
   !     (i.e. top of atmosphere to bottom) so surface-based do loops are performed in reverse (i.e. from nz to 1)
@@ -245,7 +249,11 @@ contains
 
        ! if surface buoyancy is positive then do mass-flux, otherwise not
        if (wthv>0.0) then
-         dzt(:) = dz_zt(j,:)
+         dzt = dz_zt(j,:)
+
+         ! interpolate thl and qt to interface grid
+         call linear_interp(zt,zi,thl(j,:),thl_zi,nz,nzi,shcol,0._rtype)
+         call linear_interp(zt,zi,qt(j,:),qt_zi,nz,nzi,shcol,0._rtype)
 
          ! compute entrainment coefficient
          ! get dz/L0
@@ -254,13 +262,11 @@ contains
              entf(k,i) = dzt(k) / L0
            enddo
          enddo
-          
          ! get Poisson P(dz/L0)
          call Poisson( 2, nz, 1, nup, entf, enti)
 
          ! entrainment: Ent=Ent0/dz*P(dz/L0)
          do i=1,nup
-           ent(1,i) = 0._rtype
            do k=2,nz
              ent(k,i) = real( enti(k,i))*ent0/dzt(k)
            enddo
@@ -315,13 +321,18 @@ contains
              un   = u(j,k-1)  *(1._rtype-entexpu) + upu  (k-1,i)*entexpu
              vn   = v(j,k-1)  *(1._rtype-entexpu) + upv  (k-1,i)*entexpu
              iexh = (1.e5_rtype / p(j,k))**(rgas/cp) ! MKW NOTE: why not just use SHOC exner??
-
+                          
              !Condensation within updrafts, input/output at full levels:
-             !call condensation_mf(qtn, thln, p(j,k), iexh, &
-             !                      thvn, qcn, thn, qln, qin)
-
-             ! To avoid singularities w equation has to be computed diferently if wp==0
+             if (edmf_condensation) then
+               call condensation_mf( qtn, thln, p(j,k), iexh, &
+                                   thvn, qcn, thn, qln, qin)
+             else
+                thvn = thln*(1._rtype + eps*qtn)
+             end if
+             
              b=ggr*(0.5_rtype*(thvn+upthv(k-1,i))/thv(j,k-1)-1._rtype)
+             
+             ! To avoid singularities w equation has to be computed diferently if wp==0
              wp = wb*ent(k,i)
              if (wp==0.) then
                wn2 = upw(k-1,i)**2._rtype+2._rtype*wa*b*dzt(k)
@@ -439,40 +450,35 @@ contains
          !!sflx(kts)  = 0.
          !qtflx(j,1) = 0._rtype
 
-         !print*,'max(1-ae)=',maxval(1._rtype-ae(j,:))
-
        end if  ! ( wthv > 0.0 )
      end do ! j=1,shcol
 
      ! flip output variables so index 1 = model top (i.e. lowest pressure)
      do k=1,nzi
-       dry_a_out(:,nzi-k+1) = dry_a(:,k)
-       dry_w_out(:,nzi-k+1) = dry_w(:,k)
-       dry_qt_out(:,nzi-k+1) = dry_qt(:,k)
-       dry_thl_out(:,nzi-k+1) = dry_thl(:,k)
-       dry_u_out(:,nzi-k+1) = dry_u(:,k)
-       dry_v_out(:,nzi-k+1) = dry_v(:,k)
+       mf_dry_a(:,nzi-k+1) = dry_a(:,k)
+       mf_dry_w(:,nzi-k+1) = dry_w(:,k)
+       mf_dry_qt(:,nzi-k+1) = dry_qt(:,k)
+       mf_dry_thl(:,nzi-k+1) = dry_thl(:,k)
+       mf_dry_u(:,nzi-k+1) = dry_u(:,k)
+       mf_dry_v(:,nzi-k+1) = dry_v(:,k)
 
-       moist_a_out(:,nzi-k+1) = moist_a(:,k)
-       moist_w_out(:,nzi-k+1) = moist_w(:,k)
-       moist_qt_out(:,nzi-k+1) = moist_qt(:,k)
-       moist_thl_out(:,nzi-k+1) = moist_thl(:,k)
-       moist_u_out(:,nzi-k+1) = moist_u(:,k)
-       moist_v_out(:,nzi-k+1) = moist_v(:,k)
-       moist_qc_out(:,nzi-k+1) = moist_qc(:,k)
+       mf_moist_a(:,nzi-k+1) = moist_a(:,k)
+       mf_moist_w(:,nzi-k+1) = moist_w(:,k)
+       mf_moist_qt(:,nzi-k+1) = moist_qt(:,k)
+       mf_moist_thl(:,nzi-k+1) = moist_thl(:,k)
+       mf_moist_u(:,nzi-k+1) = moist_u(:,k)
+       mf_moist_v(:,nzi-k+1) = moist_v(:,k)
+       mf_moist_qc(:,nzi-k+1) = moist_qc(:,k)
 
-       ae_out(:,nzi-k+1) = ae(:,k)
-       aw_out(:,nzi-k+1) = aw(:,k)
-       awthv_out(:,nzi-k+1) = awthv(:,k)
-       awthl_out(:,nzi-k+1) = awthl(:,k)
-       awqt_out(:,nzi-k+1) = awqt(:,k)
-       awql_out(:,nzi-k+1) = awql(:,k)
-       awqi_out(:,nzi-k+1) = awqi(:,k)
-       awu_out(:,nzi-k+1) = awu(:,k)
-       awv_out(:,nzi-k+1) = awv(:,k)
-
-       !thlflx_out(:,nzi-k+1) = thlflx(:,k)
-       !qtflx_out(:,nzi-k+1) = qtflx(:,k)
+       mf_ae(:,nzi-k+1) = ae(:,k)
+       mf_aw(:,nzi-k+1) = aw(:,k)
+       mf_awthv(:,nzi-k+1) = awthv(:,k)
+       mf_awthl(:,nzi-k+1) = awthl(:,k)
+       mf_awqt(:,nzi-k+1) = awqt(:,k)
+       mf_awql(:,nzi-k+1) = awql(:,k)
+       mf_awqi(:,nzi-k+1) = awqi(:,k)
+       mf_awu(:,nzi-k+1) = awu(:,k)
+       mf_awv(:,nzi-k+1) = awv(:,k)
      end do
 
 
@@ -483,7 +489,7 @@ contains
   ! zero or one condensation for edmf: calculates thv and qc
   !
        use wv_saturation,      only : qsat
-
+       
        real(rtype),intent(in) :: qt,thl,p,iex
        real(rtype),intent(out):: thv,qc,th,ql,qi
 
@@ -575,7 +581,7 @@ contains
     ! Sum plume vertical flux of generic variable var (a_i*w_i*var_i) [units vary]
     real(rtype), intent(in) :: awvar(shcol,nlevi)
     ! Input variable on thermo/full grid [units vary]
-    real(rtype), intent(in) :: var(shcol,nlevi) ! NOTE: var is interpolated to zi, so has dim nzi
+    real(rtype), intent(in) :: var(shcol,nlevi)
 
   ! OUTPUT VARIABLE
     real(rtype), intent(out) :: varflx(shcol,nlevi)
@@ -591,7 +597,6 @@ contains
     varflx(:shcol,1) = 0._rtype;
     do k=2,nlev
       do i=1,shcol
-        ! MKW NOTE: we may change this to
         varflx(i,k)= awvar(i,k) - aw(i,k)*var(i,k)
       end do
     end do
