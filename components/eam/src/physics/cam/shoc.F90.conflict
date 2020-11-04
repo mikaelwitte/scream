@@ -82,7 +82,7 @@ logical(btype), parameter :: dothetal_skew = .false.
 ! Use EDMF approach (SHOC+MF)
 !  In the long run, set this as a namelist variable.
 !  May even want to put this in shoc_intr?
-!logical, parameter :: do_edmf = .true.
+logical, parameter :: do_edmf = .true.
 logical, parameter :: edmf_condensation = .true.
 
 ! ========
@@ -185,10 +185,39 @@ end subroutine shoc_init
 ! Host models should call the following routine to call SHOC
 
 subroutine shoc_main ( &
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
+     shcol, nlev, nlevi, dtime, nadv, &            ! Input
+     host_dx, host_dy,thv, &                       ! Input
+     zt_grid,zi_grid,pres,presi, &                 ! Input
+     pdel, &                                       ! Input
+     wthl_sfc, wqw_sfc, uw_sfc, vw_sfc, &          ! Input
+     wtracer_sfc,num_qtracers,w_field, &           ! Input
+     exner,phis, &                                 ! Input
+     host_dse, tke, thetal, qw, &                  ! Input/Output
+     u_wind, v_wind,qtracers,&                     ! Input/Output
+     wthv_sec,tkh,tk,&                             ! Input/Output
+     shoc_ql,shoc_cldfrac,&                        ! Input/Output
+     pblh,&                                        ! Output
+     shoc_mix, isotropy,&                          ! Output (diagnostic)
+     w_sec, thl_sec, qw_sec, qwthl_sec,&           ! Output (diagnostic)
+     wthl_sec, wqw_sec, wtke_sec,&                 ! Output (diagnostic)
+     uw_sec, vw_sec, w3,&                          ! Output (diagnostic)
+     wqls_sec, brunt, shoc_ql2,&                   ! Output (diagnostic)
+     wthv_sec_tot, &                               ! Output (EDMF diagnostic)
+     mf_dry_a, mf_moist_a, &                       ! Output (EDMF diagnostic)
+     mf_dry_w, mf_moist_w, &                       ! Output (EDMF diagnostic)
+     mf_dry_qt, mf_moist_qt, &                     ! Output (EDMF diagnostic)
+     mf_dry_thl, mf_moist_thl, &                   ! Output (EDMF diagnostic)
+     mf_dry_u, mf_moist_u, &                       ! Output (EDMF diagnostic)
+     mf_dry_v, mf_moist_v, &                       ! Output (EDMF diagnostic)
+     mf_moist_qc, mf_thlflx, mf_qtflx,&            ! Output (EDMF diagnostic)
+     mf_thvflx, mf_thvflx_zt, &                    ! Output (EDMF diagnostic)
+     mf_ae, mf_aw, mf_awthv, mf_awthl, mf_awqt,&   ! Output (EDMF diagnostic)
+     mf_awql, mf_awqi, mf_awu, mf_awv)             ! Output (EDMF diagnostic)
+=======
      shcol, nlev, nlevi, dtime, nadv, &   ! Input
      host_dx, host_dy,thv, &              ! Input
-     zt_grid,zi_grid,pres,presi, &        ! Input
-     pdel, &                              ! Input
+     zt_grid,zi_grid,pres,presi,pdel,&    ! Input
      wthl_sfc, wqw_sfc, uw_sfc, vw_sfc, & ! Input
      wtracer_sfc,num_qtracers,w_field, &  ! Input
      exner,phis, &                        ! Input
@@ -202,21 +231,21 @@ subroutine shoc_main ( &
      wthl_sec, wqw_sec, wtke_sec,&        ! Output (diagnostic)
      uw_sec, vw_sec, w3,&                 ! Output (diagnostic)
      wqls_sec, brunt, shoc_ql2,&          ! Output (diagnostic)
-     wthv_sec_tot, &                      ! Output (EDMF diagnostic)
-     do_edmf, &                           ! Input (EDMF diagnostic)
-     mf_dry_a,   mf_moist_a,&             ! Output (EDMF diagnostic)
-     mf_dry_w,   mf_moist_w,&             ! Output (EDMF diagnostic)
-     mf_dry_qt,  mf_moist_qt,&            ! Output (EDMF diagnostic)
-     mf_dry_thl, mf_moist_thl,&           ! Output (EDMF diagnostic)
-     mf_dry_u,   mf_moist_u,&             ! Output (EDMF diagnostic)
-     mf_dry_v,   mf_moist_v,&             ! Output (EDMF diagnostic)
-                 mf_moist_qc,&            ! Output (EDMF diagnostic)
-     mf_thlflx,  mf_qtflx,&               ! Output (EDMF diagnostic)
-     mf_thvflx,  mf_thvflx_zt, &          ! Output (EDMF diagnostic)
-     mf_ae, mf_aw, &                      ! Output (EDMF diagnostic)
-     mf_awthv, mf_awthl, mf_awqt,&        ! Output (EDMF diagnostic)
-     mf_awql, mf_awqi, &                  ! Output (EDMF diagnostic)
-     mf_awu, mf_awv)                      ! Output (EDMF diagnostic)
+     wthv_sec_tot, &                      ! EDMF output (diagnostic)
+     do_edmf, &                           ! EDMF input
+     mf_dry_a, mf_moist_a,&               ! EDMF input/output
+     mf_dry_w, mf_moist_w,&               ! EDMF input/output
+     mf_dry_qt, mf_moist_qt,&             ! EDMF input/output
+     mf_dry_thl, mf_moist_thl,&           ! EDMF input/output
+     mf_dry_u, mf_moist_u,&               ! EDMF input/output
+     mf_dry_v, mf_moist_v,&               ! EDMF input/output
+               mf_moist_qc,&              ! EDMF input/output
+     mf_thlflx, mf_qtflx,&                ! EDMF input/output
+     s_ae, s_aw,&                         ! EDMF input/output
+     s_awthv, s_awthl, s_awqt,&           ! EDMF input/output
+     s_awql, s_awqi,&                     ! EDMF input/output
+     s_awu, s_awv)                        ! EDMF input/output
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
 
   implicit none
 
@@ -296,7 +325,10 @@ subroutine shoc_main ( &
   real(rtype), intent(inout) :: shoc_ql(shcol,nlev)
 
   ! EDMF variables
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
+=======
   logical, intent(in) :: do_edmf
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
   ! mf_* are diagnostic variables
   ! s_* are integrated plume fluxes for calculating MF contribution to total tendencies
   real(rtype), intent(inout), dimension(shcol,nlevi) :: &
@@ -308,6 +340,7 @@ subroutine shoc_main ( &
       mf_dry_v,   mf_moist_v,   & ! dry and moist plume mean v, respectively [m/s]
                   mf_moist_qc,  & ! moist plume mean qc [kg/kg]
       mf_thlflx,  mf_qtflx,     & ! total MF turbulent flux of theta_l [K m/s], q_t [(kg/kg) m/s]
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
       mf_thvflx,                & ! vertical flux of buoyancy (wthv) from mass flux plumes [K m/s]
       mf_ae,    & ! environmental area; by default ae=1 (set constant for now) [-]
       mf_aw,    & ! sum(a_i * w_i) [m/s]
@@ -321,6 +354,17 @@ subroutine shoc_main ( &
 
   ! wthv MF flux in zt grid as wthv_sec_tot
   real(rtype), intent(inout) :: mf_thvflx_zt(shcol,nlev)
+=======
+      s_ae,    & ! environmental area; by default ae=1 (set constant for now) [-]
+      s_aw,    & ! sum(a_i * w_i) [m/s]
+      s_awthv, & ! sum(a_i * w_i * thv_i) [K m/s]
+      s_awthl, & ! sum(a_i * w_i * thl_i) [K m/s]
+      s_awqt,  & ! sum(a_i * w_i * qt_i)  [(kg/kg) m/s]
+      s_awql,  & ! sum(a_i * w_i * ql_i) [(kg/kg) m/s]
+      s_awqi,  & ! sum(a_i * w_i * qi_i) [(kg/kg) m/s]
+      s_awu,   & ! sum(a_i * w_i * u_i) [m^2/s^2]
+      s_awv      ! sum(a_i * w_i * v_i) [m^2/s^2]
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
 
   ! OUTPUT VARIABLES
 
@@ -391,11 +435,14 @@ subroutine shoc_main ( &
               se_a(shcol),ke_a(shcol),&
               wv_a(shcol),wl_a(shcol)
 
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
   real(rtype) :: thv_zi(shcol,nlevi)
 
   ! pressure levels on interface grid [Pa] used in mf_integrate()
   real(rtype) :: pres_zi(shcol,nlevi)
 
+=======
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
   ! EDMF local variables
   ! number of updraft plumes [-]
   integer :: nup
@@ -403,6 +450,10 @@ subroutine shoc_main ( &
   !   when we get to the final implementation, remove this as it will all be handled by do_edmf
   logical :: do_mfdif
 
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
+=======
+
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
   ! Compute integrals of static energy, kinetic energy, water vapor, and liquid water
   ! for the computation of total energy before SHOC is called.  This is for an
   ! effort to conserve energy since liquid water potential temperature (which SHOC
@@ -448,14 +499,27 @@ subroutine shoc_main ( &
        ustar,obklen,kbfs,shoc_cldfrac,&     ! Input
        pblh)                                ! Output
 
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
+
+    ! If using EDMF plumes, diagnose plume properties here
+
+    nup = 100
+    if (do_edmf) then
+       do_mfdif = .true.
+       call init_random_seed
+       call integrate_mf(&
+               edmf_condensation,exner,&                 ! Input flag for condensation subroutine
+               shcol, nlev, nlevi, dtime,&               ! Input
+               zt_grid, zi_grid, dz_zt, presi,&          ! Input
+=======
     ! If using EDMF plumes, diagnose plume properties here
     nup = 25
     if (do_edmf) then
        do_mfdif = .true.
        call integrate_mf(&
-               edmf_condensation,exner,&                 ! Input flag for condensation subroutine
                shcol, nlev, nlevi, dtime,&               ! Input
-               zt_grid, zi_grid, dz_zt, presi,&          ! Input
+               zt_grid, zi_grid, dz_zt, pres,&           ! Input
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
                nup, u_wind, v_wind, thetal, thv, qw,&    ! Input
                ustar, wthl_sfc, wqw_sfc, pblh, shoc_ql,& ! Input
                mf_dry_a,   mf_moist_a, &                 ! Output - updraft diagnostics
@@ -465,11 +529,20 @@ subroutine shoc_main ( &
                mf_dry_u,   mf_moist_u,  &                ! Output - updraft diagnostics
                mf_dry_v,   mf_moist_v, &                 ! Output - updraft diagnostics
                            mf_moist_qc, &                ! Output - updraft diagnostics
-               mf_ae,      mf_aw, &                      ! Output - for diffusion solver
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
+               mf_ae,       mf_aw, &                     ! Output - for diffusion solver
                mf_awthv, &                               ! Output for total wthv
-               mf_awthl,   mf_awqt, &                    ! Output - for diffusion solver
-               mf_awql,    mf_awqi, &                    ! Output - for diffusion solver/PDF closure but not coupled yet
-               mf_awu,     mf_awv )                      ! Output - for diffusion solver/PDF closure but not coupled yet
+               mf_awthl,    mf_awqt, &                   ! Output - for diffusion solver
+               mf_awql,     mf_awqi, &                   ! Output - for diffusion solver/PDF closure but not coupled yet
+               mf_awu,      mf_awv )                     ! Output - for diffusion solver/PDF closure but not coupled yet
+=======
+               s_ae,       s_aw, &                       ! Output - for diffusion solver
+               s_awthv, &                                ! Output for total wthv
+               s_awthl,    s_awqt, &                     ! Output - for diffusion solver
+               s_awql,     s_awqi, &                     ! Output - for diffusion solver/PDF closure but not coupled yet
+               s_awu,      s_awv )                       ! Output - for diffusion solver/PDF closure but not coupled yet
+               ! MKW NOTE: mf_thlflx and mf_qtflx are no longer calculated here
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
     else
        do_mfdif = .false.
 
@@ -488,6 +561,7 @@ subroutine shoc_main ( &
        mf_moist_v = 0._rtype
        mf_moist_qc = 0._rtype
 
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
        mf_ae = 1._rtype
        mf_aw = 0._rtype
        mf_awthv = 0._rtype
@@ -503,11 +577,27 @@ subroutine shoc_main ( &
     ! needed for the TKE equation
     ! We don't need to do anything if EDMF is off because then wthv_sec_tot == wthv_sec
     ! MJ: We can interpolate mf_ae, mf_aw and mf_awthv to the midpoint grid. Now we are doing upwind
+=======
+       s_ae = 1._rtype
+       s_aw = 0._rtype
+       s_awthv = 0._rtype
+       s_awthl = 0._rtype
+       s_awqt = 0._rtype
+       s_awql = 0._rtype
+       s_awqi = 0._rtype
+       s_awu = 0._rtype
+       s_awv = 0._rtype
+    endif
+
+    ! Calculate the total buoyancy flux: wthv_tot = s_ae*wthv_sec + s_awthv - s_aw*thv_zi
+    ! needed for the TKE equation
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
     call wthv_mf(&
        shcol,nlev,nlevi,&             ! Input
        wthv_sec,thv,&                 ! Input
        s_ae, s_aw, s_awthv,&          ! Input
        wthv_sec_tot)
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
 
      call linear_interp(zt_grid,zi_grid,thv,thv_zi,nlev,nlevi,shcol,0._rtype)
      call calc_mf_vertflux(shcol,nlev,nlevi,mf_aw,mf_awthv,thv_zi,mf_thvflx)
@@ -520,6 +610,18 @@ subroutine shoc_main ( &
         thetal,wthv_sec,thv,&             ! Input
         brunt,shoc_mix)                   ! Output
 
+=======
+    !wthv_sec_tot=wthv_sec
+
+    ! Update the turbulent length scale
+    call shoc_length(&
+       shcol,nlev,nlevi,&               ! Input
+       host_dx,host_dy,pblh,&               ! Input
+       tke,zt_grid,zi_grid,dz_zt,dz_zi,&        ! Input
+       thetal,wthv_sec_tot,thv,&            ! Input
+       brunt,shoc_mix)                      ! Output
+
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
     ! Advance the SGS TKE equation
     ! MKW TODO: add MF buoyancy flux to inputs
     call shoc_tke(&
@@ -538,9 +640,14 @@ subroutine shoc_main ( &
        dtime,dz_zt,dz_zi,rho_zt,&           ! Input
        zt_grid,zi_grid,tk,tkh,&             ! Input
        uw_sfc,vw_sfc,wthl_sfc,wqw_sfc,&     ! Input
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
        wtracer_sfc,&                        ! Input
        do_mfdif,mf_ae,mf_aw,mf_awu,mf_awv,&     ! EDMF Input
        mf_awthl,mf_awqt,&                     ! EDMF Input
+=======
+       do_mfdif,s_ae,s_aw,s_awu,s_awv,&     ! EDMF Input
+       s_awthl,s_awqt,&                     ! EDMF Input
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
        thetal,qw,qtracers,tke,&             ! Input/Output
        u_wind,v_wind)                       ! Input/Output
 
@@ -551,8 +658,13 @@ subroutine shoc_main ( &
        isotropy,tkh,tk,&                      ! Input
        dz_zi,zt_grid,zi_grid,shoc_mix, &      ! Input
        wthl_sfc, wqw_sfc, uw_sfc, vw_sfc, &   ! Input
-       do_mfdif, mf_ae,       mf_aw, &                    ! EDMF Input
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
+       mf_ae,       mf_aw, &                    ! EDMF Input
        mf_awthl,    mf_awqt, &                  ! EDMF Input
+=======
+       do_mfdif,   s_ae,       s_aw, &        ! EDMF Input
+       s_awthl,    s_awqt, &                  ! EDMF Input
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
        thl_sec, qw_sec,wthl_sec,wqw_sec,&     ! Output
        qwthl_sec, uw_sec, vw_sec, wtke_sec, & ! Output
        w_sec,&                                ! Output
@@ -636,15 +748,26 @@ subroutine shoc_main ( &
 end subroutine shoc_main
 
 !==============================================================
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
 ! Calculates the total bouyancy flux: wthv_tot = mf_ae*wthv_sec + mf_awthv - mf_aw*thv_zi
 ! Buoyancy flux is used in shoc_length() and shoc_tke()
+=======
+! Calculates the total bouyancy flux: wthv_tot = s_ae*wthv_sec + s_awthv - s_aw*thv_zi
+! Bouyancy flux is used in shoc_length() and shoc_tke()
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
 
 subroutine wthv_mf(&
        shcol,nlev,nlevi,&             ! Input
        wthv_sec,thv,&                 ! Input
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
        mf_ae, mf_aw, mf_awthv,&          ! Input
        mf_thvflx_zt,wthv_sec_tot)     ! Output
 
+=======
+       s_ae, s_aw, s_awthv,&          ! Input
+       wthv_sec_tot)                  ! Output
+
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
   implicit none
 
 ! INPUT VARIABLES
@@ -659,6 +782,7 @@ subroutine wthv_mf(&
   ! Virtual potential temperature [K]
   real(rtype), intent(in) :: thv(shcol,nlev)
   ! Input variables needed for ED+MF
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
   real(rtype), intent(in) :: mf_ae(shcol,nlevi)    ! environmental area
   real(rtype), intent(in) :: mf_aw(shcol,nlevi)    ! sum(a_i * w_i) [m/s]
   real(rtype), intent(in) :: mf_awthv(shcol,nlevi) ! sum(a_i * w_i * thv_i) [K m/s]
@@ -667,11 +791,20 @@ subroutine wthv_mf(&
   ! Output = MF wthv flux
   real(rtype), intent(out) :: mf_thvflx_zt(shcol,nlev)
 
+=======
+  real(rtype), intent(in) :: s_ae(shcol,nlevi)    ! environmental area
+  real(rtype), intent(in) :: s_aw(shcol,nlevi)    ! sum(a_i * w_i) [m/s]
+  real(rtype), intent(in) :: s_awthv(shcol,nlevi) ! sum(a_i * w_i * thv_i) [K m/s]
+  ! Output = total wthv flux = ED + MF
+  real(rtype), intent(out) :: wthv_sec_tot(shcol,nlev)
+
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
   ! local variables
   integer :: i, k
 
   do k=2,nlev
     do i=1,shcol
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
       wthv_sec_tot(i,k) = mf_ae(i,k+1)*wthv_sec(i,k) + mf_awthv(i,k+1) - mf_aw(i,k+1)*thv(i,k)
       mf_thvflx_zt(i,k) = mf_awthv(i,k+1) - mf_aw(i,k+1)*thv(i,k)
     enddo
@@ -682,6 +815,16 @@ subroutine wthv_mf(&
      mf_thvflx_zt(i,1) = 0._rtype
   enddo
 
+=======
+      wthv_sec_tot(i,k) = s_ae(i,k)*wthv_sec(i,k) + s_awthv(i,k) - s_aw(i,k)*thv(i,k)
+    enddo
+  enddo
+
+  do i=1,shcol
+     wthv_sec_tot(i,1) = 0._rtype
+  enddo
+
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
   return
 
 end subroutine wthv_mf
@@ -810,8 +953,13 @@ subroutine update_prognostics_implicit( &
          dtime,dz_zt,dz_zi,rho_zt,&       ! Input
          zt_grid,zi_grid,tk,tkh,&         ! Input
          uw_sfc,vw_sfc,wthl_sfc,wqw_sfc,& ! Input
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
          do_mf,mf_ae,mf_aw,mf_awu,mf_awv,&    ! EDMF Input
          mf_awthl,mf_awqt,&                 ! EDMF Input
+=======
+         do_mf,s_ae,s_aw,s_awu,s_awv,&    ! EDMF Input
+         s_awthl,s_awqt,&                 ! EDMF Input
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
          thetal,qw,tracer,tke,&           ! Input/Output
          u_wind,v_wind)                   ! Input/Output
 
@@ -858,6 +1006,7 @@ subroutine update_prognostics_implicit( &
   ! If .true., diagnose MF plumes and include in vertical diffusion solver
   logical, intent(in) ::  do_mf
   ! Fractional area of of nonconvective environment
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
   real(rtype), intent(in) :: mf_ae(shcol,nlevi)
   ! MF plume sum(a_i*w_i)
   real(rtype), intent(in) :: mf_aw(shcol,nlevi)
@@ -869,6 +1018,19 @@ subroutine update_prognostics_implicit( &
   real(rtype), intent(in) :: mf_awthl(shcol,nlevi)
   ! Total MF plume q_t turbulent flux
   real(rtype), intent(in) :: mf_awqt(shcol,nlevi)
+=======
+  real(rtype), intent(in) :: s_ae(shcol,nlevi)
+  ! MF plume sum(a_i*w_i)
+  real(rtype), intent(in) :: s_aw(shcol,nlevi)
+  ! Total MF plume u turbulent flux
+  real(rtype), intent(in) :: s_awu(shcol,nlevi)
+  ! Total MF plume v turbulent flux
+  real(rtype), intent(in) :: s_awv(shcol,nlevi)
+  ! Total MF plume theta_l turbulent flux
+  real(rtype), intent(in) :: s_awthl(shcol,nlevi)
+  ! Total MF plume q_t turbulent flux
+  real(rtype), intent(in) :: s_awqt(shcol,nlevi)
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
 
 ! IN/OUT VARIABLES
   ! liquid water potential temperature [K]
@@ -912,8 +1074,17 @@ subroutine update_prognostics_implicit( &
   !  at interfaces. Substitue dp = g*rho*dz in the above equation
   call compute_tmpi(nlevi, shcol, dtime, rho_zi, dz_zi, tmpi)
   ! MKW added 20200820
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
   tmpi3(:,1) = 0._rtype
   call compute_tmpi3(nlevi, shcol, dtime, rho_zi, tmpi3)
+=======
+  if (do_mf) then
+     tmpi3(:,1) = 0._rtype
+     call compute_tmpi3(nlevi, shcol, dtime, rho_zi, tmpi3)
+  else
+     tmpi3(:,:) = 0._rtype
+  endif
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
 
   ! compute 1/dp term, needed in diffusion solver
   call dp_inverse(nlev, shcol, rho_zt, dz_zt, rdp_zt)
@@ -932,6 +1103,7 @@ subroutine update_prognostics_implicit( &
 
   ! Call decomp for momentum variables
   call vd_shoc_decomp(shcol,nlev,nlevi,tk_zi,tmpi,rdp_zt,dtime,&
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
      ksrf,.false.,mf_ae,mf_aw,tmpi3,ca,cc,denom,ze)
 
   ! march u_wind one step forward using implicit solver
@@ -939,11 +1111,21 @@ subroutine update_prognostics_implicit( &
 
   ! march v_wind one step forward using implicit solver
   call vd_shoc_solve(shcol,nlev,nlevi,ca,cc,denom,ze,.false.,mf_awv,tmpi3,rdp_zt,v_wind)
+=======
+     ksrf,.false.,s_ae,s_aw,tmpi3,ca,cc,denom,ze)
+
+  ! march u_wind one step forward using implicit solver
+  call vd_shoc_solve(shcol,nlev,nlevi,ca,cc,denom,ze,.false.,s_awu,tmpi3,rdp_zt,u_wind)
+
+  ! march v_wind one step forward using implicit solver
+  call vd_shoc_solve(shcol,nlev,nlevi,ca,cc,denom,ze,.false.,s_awv,tmpi3,rdp_zt,v_wind)
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
 
 ! Call decomp for thermo variables
   flux_dummy(:) = 0._rtype ! fluxes applied explicitly, so zero fluxes out
                            ! for implicit solver decomposition
   call vd_shoc_decomp(shcol,nlev,nlevi,tkh_zi,tmpi,rdp_zt,dtime,&
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
      flux_dummy,do_mf,mf_ae,mf_aw,tmpi3,ca,cc,denom,ze)
 
   ! march temperature one step forward using implicit solver
@@ -961,6 +1143,25 @@ subroutine update_prognostics_implicit( &
   ! march tracers one step forward using implicit solver
   do p=1,num_tracer
     call vd_shoc_solve(shcol,nlev,nlevi,ca,cc,denom,ze,.false.,mf_aw,tmpi3,rdp_zt,tracer(:shcol,:nlev,p))
+=======
+     flux_dummy,do_mf,s_ae,s_aw,tmpi3,ca,cc,denom,ze)
+
+  ! march temperature one step forward using implicit solver
+  call vd_shoc_solve(shcol,nlev,nlevi,ca,cc,denom,ze,do_mf,s_awthl,tmpi3,rdp_zt,thetal)
+
+  ! march total water one step forward using implicit solver
+  call vd_shoc_solve(shcol,nlev,nlevi,ca,cc,denom,ze,do_mf,s_awqt,tmpi3,rdp_zt,qw)
+
+  ! MKW: Call decomp one more time for TKE and tracers so they don't "see" MF plumes
+  call vd_shoc_decomp(shcol,nlev,nlevi,tkh_zi,tmpi,rdp_zt,dtime,&
+          flux_dummy,.false.,s_ae,s_aw,tmpi3,ca,cc,denom,ze)
+  ! march tke one step forward using implicit solver
+  call vd_shoc_solve(shcol,nlev,nlevi,ca,cc,denom,ze,.false.,s_aw,tmpi3,rdp_zt,tke)
+
+  ! march tracers one step forward using implicit solver
+  do p=1,num_tracer
+    call vd_shoc_solve(shcol,nlev,nlevi,ca,cc,denom,ze,.false.,s_aw,tmpi3,rdp_zt,tracer(:shcol,:nlev,p))
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
   enddo
 
   return
@@ -1161,11 +1362,20 @@ subroutine diag_second_shoc_moments(&
          isotropy,tkh,tk,&                      ! Input
          dz_zi,zt_grid,zi_grid,shoc_mix, &      ! Input
          wthl_sfc, wqw_sfc, uw_sfc, vw_sfc, &   ! Input
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
+         ae, aw, awthl, awqt, &                 ! EDMF Input
+=======
          do_mf, ae, aw, awthl, awqt, &          ! EDMF Input
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
          thl_sec,qw_sec,wthl_sec,wqw_sec,&      ! Output
          qwthl_sec, uw_sec, vw_sec, wtke_sec, & ! Output
          w_sec,&                                ! Output
          mf_thlflx, mf_qtflx )                  ! EDMF Output
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
+
+
+=======
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
 
   ! This is the main routine to compute the second
   !   order moments in SHOC.
@@ -1289,7 +1499,11 @@ subroutine diag_second_shoc_moments(&
      thetal, qw, u_wind, v_wind, tke, &     ! Input
      isotropy, tkh, tk,&                    ! Input
      dz_zi, zt_grid, zi_grid, shoc_mix, &   ! Input
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
+     ae, aw, awthl, awqt, &                 ! EDMF Input
+=======
      do_mf, ae, aw, awthl, awqt, &          ! EDMF Input
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
      thl_sec, qw_sec,wthl_sec,wqw_sec,&     ! Input/Output
      qwthl_sec, uw_sec, vw_sec, wtke_sec, & ! Input/Output
      w_sec,&                                ! Output
@@ -1484,7 +1698,11 @@ subroutine diag_second_moments(&
          thetal,qw,u_wind,v_wind,tke, &         ! Input
          isotropy,tkh,tk,&                      ! Input
          dz_zi,zt_grid,zi_grid,shoc_mix, &      ! Input
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
+         ae, aw, awthl, awqt, &                 ! Input - EDMF
+=======
          do_mf, ae, aw, awthl, awqt, &          ! Input - EDMF
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
          thl_sec,qw_sec,wthl_sec,wqw_sec,&      ! Input/Output
          qwthl_sec, uw_sec, vw_sec, wtke_sec, & ! Input/Output
          w_sec,&                                ! Output
@@ -1533,7 +1751,10 @@ subroutine diag_second_moments(&
   real(rtype), intent(in) :: shoc_mix(shcol,nlev)
 
   !EDMF inputs
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
+=======
   logical    , intent(in) :: do_mf
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
   real(rtype), intent(in) :: ae(shcol,nlevi)
   real(rtype), intent(in) :: aw(shcol,nlevi)
   real(rtype), intent(in) :: awthl(shcol,nlevi)
@@ -1574,11 +1795,19 @@ subroutine diag_second_moments(&
   real(rtype) :: tk_zi(shcol,nlevi)
   real(rtype) :: thl_zi(shcol,nlevi)
   real(rtype) :: qw_zi(shcol,nlevi)
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
+
+=======
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
   ! Determines if total fluxes (ED+MF) are computed or not
   logical :: do_total_fluxes
   !Dummy variable
   real(rtype) :: aw_dummy(shcol,nlevi)
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
 
+=======
+
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
   ! Interpolate some variables from the midpoint grid to the interface grid
   call linear_interp(zt_grid,zi_grid,isotropy,isotropy_zi,nlev,nlevi,shcol,0._rtype)
   call linear_interp(zt_grid,zi_grid,tkh,tkh_zi,nlev,nlevi,shcol,0._rtype)
@@ -1609,7 +1838,11 @@ subroutine diag_second_moments(&
          qwthl_sec)                               ! Input/Output
 
   ! Calculate vertical flux for heat
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
+  do_total_fluxes = do_edmf !.true.
+=======
   do_total_fluxes = do_mf
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
   call calc_shoc_vertflux(&
          shcol,nlev,nlevi,tkh_zi,dz_zi,thetal,&   ! Input
          zt_grid,zi_grid,ae,aw,awthl,&            ! Input
@@ -1619,7 +1852,11 @@ subroutine diag_second_moments(&
   call calc_mf_vertflux(shcol,nlev,nlevi,aw,awthl,thl_zi,mf_thlflx)
 
   ! Calculate vertical flux for moisture
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
+  do_total_fluxes = do_edmf !.true.
+=======
   do_total_fluxes = do_mf
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
   call calc_shoc_vertflux(&
          shcol,nlev,nlevi,tkh_zi,dz_zi,qw,&       ! Input
          zt_grid,zi_grid,ae,aw,awqt,&             ! Input
@@ -1630,7 +1867,11 @@ subroutine diag_second_moments(&
 
   ! Calculate vertical flux for TKE
   do_total_fluxes = .false.
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
   aw_dummy = 0._rtype
+=======
+  aw_dummy = 0._rtype
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
   call calc_shoc_vertflux(&
          shcol,nlev,nlevi,tkh_zi,dz_zi,tke,&      ! Input
          zt_grid,zi_grid,ae,aw,aw_dummy,&         ! Input
@@ -1639,7 +1880,11 @@ subroutine diag_second_moments(&
 
   ! Calculate vertical flux for momentum (zonal wind)
   do_total_fluxes = .false.
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
   aw_dummy = 0._rtype
+=======
+  aw_dummy = 0._rtype
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
   call calc_shoc_vertflux(&
          shcol,nlev,nlevi,tk_zi,dz_zi,u_wind,&    ! Input
          zt_grid,zi_grid,ae,aw,aw_dummy,&         ! Input
@@ -1648,7 +1893,11 @@ subroutine diag_second_moments(&
 
   ! Calculate vertical flux for momentum (meridional wind)
   do_total_fluxes = .false.
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
   aw_dummy = 0._rtype
+=======
+  aw_dummy = 0._rtype
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
   call calc_shoc_vertflux(&
          shcol,nlev,nlevi,tk_zi,dz_zi,v_wind,&    ! Input
          zt_grid,zi_grid,ae,aw,aw_dummy,&         ! Input
@@ -1729,7 +1978,11 @@ end subroutine calc_shoc_varorcovar
 
 subroutine calc_shoc_vertflux(&
          shcol,nlev,nlevi,tkh_zi,dz_zi,invar,&  ! Input
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
          zt_grid,zi_grid,mf_ae,mf_aw,mf_aw_invar,& ! Input
+=======
+         zt_grid,zi_grid,s_ae,s_aw,s_aw_invar,& ! Input
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
          do_total_fluxes,&                      ! Input - Logical variable
          vertflux)                              ! Input/Output
 
@@ -1761,6 +2014,7 @@ subroutine calc_shoc_vertflux(&
   ! Input variable [units vary]
   real(rtype), intent(in) :: invar(shcol,nlev)
   ! Input from the MF subroutine
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
   real(rtype), intent(in) :: mf_ae(shcol,nlevi)       ! EDMF: Environmental area
   real(rtype), intent(in) :: mf_aw(shcol,nlevi)       ! EDMF: sum(a_i * w_i) [m/s]
   real(rtype), intent(in) :: mf_aw_invar(shcol,nlevi) ! EDMF: sum(a_i * w_i * var_in) [? m/s]
@@ -1768,6 +2022,15 @@ subroutine calc_shoc_vertflux(&
   ! Logical variable
   logical, intent(in) :: do_total_fluxes
 
+=======
+  real(rtype), intent(in) :: s_ae(shcol,nlevi)       ! EDMF: Environmental area
+  real(rtype), intent(in) :: s_aw(shcol,nlevi)       ! EDMF: sum(a_i * w_i) [m/s]
+  real(rtype), intent(in) :: s_aw_invar(shcol,nlevi) ! EDMF: sum(a_i * w_i * var_in) [? m/s]
+
+  ! Logical variable
+  logical, intent(in) :: do_total_fluxes
+
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
   ! INPUT/OUTPUT VARIABLES
   real(rtype), intent(out) :: vertflux(shcol,nlevi)
 
@@ -1775,7 +2038,11 @@ subroutine calc_shoc_vertflux(&
   integer :: i, k, kt
   real(rtype) :: grid_dz
   real(rtype) :: invar_zi(shcol,nlevi)
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
 
+=======
+
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
 #ifdef SCREAM_CONFIG_IS_CMAKE
    if (use_cxx) then
       call calc_shoc_vertflux_f(shcol,nlev,nlevi,tkh_zi,dz_zi,invar,&  ! Input
@@ -1784,6 +2051,9 @@ subroutine calc_shoc_vertflux(&
    endif
 #endif
 
+  call linear_interp(zt_grid,zi_grid,invar,invar_zi,nlev,nlevi,shcol,0._rtype)
+
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
   call linear_interp(zt_grid,zi_grid,invar,invar_zi,nlev,nlevi,shcol,0._rtype)
 
   if (do_total_fluxes) then
@@ -1814,7 +2084,36 @@ subroutine calc_shoc_vertflux(&
 
   endif
 
+=======
+  if (do_total_fluxes) then
+    do k=2,nlev
 
+      kt=k-1 ! define upper grid point indice
+      do i=1,shcol
+
+        grid_dz=1._rtype/dz_zi(i,k) ! vertical grid diff squared
+
+        ! Compute the vertical flux via downgradient diffusion
+        vertflux(i,k)=(-1._rtype*s_ae(i,k)*tkh_zi(i,k)*grid_dz*(invar(i,kt)-invar(i,k))) + &
+          s_aw_invar(i,k) - s_aw(i,k)*0.5*(invar(i,kt)+invar(i,k))    !invar_zi(i,k)
+
+      enddo
+    enddo
+  else
+    do k=2,nlev
+
+      kt=k-1 ! define upper grid point indice
+      do i=1,shcol
+        grid_dz=1._rtype/dz_zi(i,k) ! vertical grid diff squared
+
+        vertflux(i,k)=-1._rtype*tkh_zi(i,k)*grid_dz*&
+          (invar(i,kt)-invar(i,k))
+      enddo
+    enddo
+
+  endif
+
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
   return
 end subroutine calc_shoc_vertflux
 
@@ -3648,7 +3947,11 @@ subroutine vd_shoc_decomp( &
          shcol,nlev,nlevi,&          ! Input
          kv_term,tmpi,rdp_zt,dtime,& ! Input
          flux, &                     ! Input
-         do_mf,mf_ae,mf_aw,tmpi3,&   ! EDMF input
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
+         do_mf,mf_ae,mf_aw,tmpi3,&     ! EDMF input
+=======
+         do_mf,s_ae,s_aw,tmpi3,&     ! EDMF input
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
          ca,cc,denom,ze)             ! Output
 
   implicit none
@@ -3676,9 +3979,15 @@ subroutine vd_shoc_decomp( &
   ! Include mass flux contribution?
   logical,  intent(in)  :: do_mf
   ! Sum of environment area, i.e. 1-sum(a_i) [-]
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
   real(rtype), intent(in)  :: mf_ae(shcol,nlevi)
   ! Sum (a_i*w_i) [m/s]
   real(rtype), intent(in)  :: mf_aw(shcol,nlevi)
+=======
+  real(rtype), intent(in)  :: s_ae(shcol,nlevi)
+  ! Sum (a_i*w_i) [m/s]
+  real(rtype), intent(in)  :: s_aw(shcol,nlevi)
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
   ! dt*g*rho on interfaces
   real(rtype), intent(in)  :: tmpi3(shcol,nlevi)
 
@@ -3702,10 +4011,17 @@ subroutine vd_shoc_decomp( &
   do k=nlev-1,1,-1
     do i=1,shcol
       if ( do_mf ) then
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
          ca(i,k  ) = (mf_ae(i,k+1)*kv_term(i,k+1)*tmpi(i,k+1) &
               - 0.5_rtype*tmpi3(i,k+1)*mf_aw(i,k+1))*rdp_zt(i,k  )
          cc(i,k+1) = (mf_ae(i,k+1)*kv_term(i,k+1)*tmpi(i,k+1) &
               + 0.5_rtype*tmpi3(i,k+1)*mf_aw(i,k+1))*rdp_zt(i,k+1)
+=======
+         ca(i,k  ) = (s_ae(i,k+1)*kv_term(i,k+1)*tmpi(i,k+1) &
+              - 0.5_rtype*tmpi3(i,k+1)*s_aw(i,k+1))*rdp_zt(i,k  )
+         cc(i,k+1) = (s_ae(i,k+1)*kv_term(i,k+1)*tmpi(i,k+1) &
+              + 0.5_rtype*tmpi3(i,k+1)*s_aw(i,k+1))*rdp_zt(i,k+1)
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
       else
         ca(i,k) = kv_term(i,k+1) * tmpi(i,k+1) * rdp_zt(i,k)
         cc(i,k+1) = kv_term(i,k+1) * tmpi(i,k+1) * rdp_zt(i,k+1)
@@ -3725,7 +4041,11 @@ subroutine vd_shoc_decomp( &
     if ( do_mf ) then
       denom(i,nlev) = 1._rtype/ &
         (1._rtype + cc(i,nlev) - &
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
         tmpi3(i,nlev)*mf_aw(i,nlev)*rdp_zt(i,nlev) + &
+=======
+        tmpi3(i,nlev)*s_aw(i,nlev)*rdp_zt(i,nlev) + &
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
         flux(i)*dtime*ggr*rdp_zt(i,nlev))
     else
       denom(i,nlev) = 1._rtype/ &
@@ -3740,7 +4060,11 @@ subroutine vd_shoc_decomp( &
         denom(i,k) = 1._rtype/ &
           (1._rtype + ca(i,k) + cc(i,k) - &
           ca(i,k)*ze(i,k+1) - &
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
           (tmpi3(i,k)*mf_aw(i,k) - tmpi3(i,k+1)*mf_aw(i,k+1))*rdp_zt(i,k))
+=======
+          (tmpi3(i,k)*s_aw(i,k) - tmpi3(i,k+1)*s_aw(i,k+1))*rdp_zt(i,k))
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
       else
         denom(i,k) = 1._rtype/ &
           (1._rtype + ca(i,k) + cc(i,k) - &
@@ -3752,13 +4076,18 @@ subroutine vd_shoc_decomp( &
 
   do i=1,shcol
     if ( do_mf ) then
-      !MJ bug fix
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
       !denom(i,1) = 1._rtype/ &
       !  (1._rtype + ca(i,1) - ca(i,1)*ze(i,2) - &
       !  (tmpi3(i,1)*mf_aw(i,1) - tmpi3(i,2)*mf_aw(i,2))*rdp_zt(i,1))
       denom(i,1) = 1._rtype/ &
         (1._rtype + ca(i,1) - ca(i,1)*ze(i,2) + &
         tmpi3(i,2)*mf_aw(i,2)*rdp_zt(i,1))
+=======
+      denom(i,1) = 1._rtype/ &
+        (1._rtype + ca(i,1) - ca(i,1)*ze(i,2) - &
+        (tmpi3(i,1)*s_aw(i,1) - tmpi3(i,2)*s_aw(i,2))*rdp_zt(i,1))
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
     else
       denom(i,1) = 1._rtype/ &
         (1._rtype + ca(i,1) - ca(i,1) * ze(i,2))
@@ -3798,7 +4127,11 @@ end subroutine vd_shoc_decomp
 subroutine vd_shoc_solve(&
          shcol,nlev,nlevi,&   ! Input
          ca,cc,denom,ze,&     ! Input
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
          do_mf,mf_awvar,&      ! EDMF Input
+=======
+         do_mf,s_awvar,&      ! EDMF Input
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
          tmpi3,rdp_zt,&       ! EDMF Input
          var)                 ! Input/Output
 
@@ -3824,7 +4157,11 @@ subroutine vd_shoc_solve(&
   ! Include mass flux contribution?
   logical,  intent(in)    :: do_mf
   ! Sum of plume (a_i*w_i*var_i)
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
   real(rtype), intent(in)    :: mf_awvar(shcol,nlevi)
+=======
+  real(rtype), intent(in)    :: s_awvar(shcol,nlevi)
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
   ! dt*g*rho on interfaces
   real(rtype), intent(in)    :: tmpi3(shcol,nlevi)
   ! 1/dp
@@ -3846,7 +4183,11 @@ subroutine vd_shoc_solve(&
   do i=1,shcol
     if (do_mf) then
       zf(i,nlev) = (var(i,nlev) - &
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
         tmpi3(i,nlev)*mf_awvar(i,nlev)*rdp_zt(i,nlev))*denom(i,nlev)
+=======
+        tmpi3(i,nlev)*s_awvar(i,nlev)*rdp_zt(i,nlev))*denom(i,nlev)
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
     else
       zf(i,nlev) = var(i,nlev) * denom(i,nlev)
     endif
@@ -3856,7 +4197,11 @@ subroutine vd_shoc_solve(&
     do i=1,shcol
       if (do_mf) then
         zf(i,k) = (var(i,k) + &
+<<<<<<< HEAD:components/eam/src/physics/cam/shoc.F90
           (tmpi3(i,k+1)*mf_awvar(i,k+1) - tmpi3(i,k)*mf_awvar(i,k))*rdp_zt(i,k) + &
+=======
+          (tmpi3(i,k+1)*s_awvar(i,k+1) - tmpi3(i,k)*s_awvar(i,k))*rdp_zt(i,k) + &
+>>>>>>> origin/mikaelwitte/test_upstream_merge2:components/cam/src/physics/cam/shoc.F90
           ca(i,k)*zf(i,k+1))*denom(i,k)
       else
         zf(i,k) = (var(i,k) + ca(i,k) * zf(i,k+1)) * denom(i,k)
