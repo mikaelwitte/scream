@@ -39,7 +39,7 @@ contains
   !  Eddy-diffusivity mass-flux routine                                                                               !
   ! =============================================================================== !
 
-  subroutine integrate_mf(do_condensation, exner,                  & ! input
+  subroutine integrate_mf(do_condensation,                         & ! input
                  shcol, nz, nzi, dt,                               & ! input
                  zt_in, zi_in, dz_zt_in, p_in,                     & ! input - MKW 20200804 removed iex and dz_zi_in
                  nup,    u_in,   v_in,   thl_in,   thv_in, qt_in,  & ! input
@@ -79,7 +79,6 @@ contains
        ! physics controls
        logical, intent(in) :: do_condensation
        integer, intent(in) :: shcol,nz,nzi,nup
-       real(rtype), dimension(shcol,nz),  intent(in) :: exner
        real(rtype), dimension(shcol,nz),  intent(in) :: zt_in,dz_zt_in,p_in !,iex_in
        ! MKW TODO: remove zi_in as an argument, was only needed for linear_interp calls that were removed on 2020/09/01
        real(rtype), dimension(shcol,nzi), intent(in) :: zi_in
@@ -103,7 +102,7 @@ contains
 
   ! INTERNAL VARIABLES
   ! flipped variables (i.e. index 1 is at surface)
-       real(rtype), dimension(shcol,nz)  :: zt, dz_zt, iexner, p
+       real(rtype), dimension(shcol,nz)  :: zt, dz_zt, p
        real(rtype), dimension(shcol,nzi) :: zi
        real(rtype), dimension(shcol,nz)  :: u,v,thl,qt,qc,thv
   ! flipped updraft properties (i.e. index 1 is at surface)
@@ -177,7 +176,6 @@ contains
        if (k<nzi) then
          zt(:,k) = zt_in(:,nz-k+1)
          dz_zt(:,k) = dz_zt_in(:,nz-k+1)
-         exner_i(:,k) = exner(:,nz-k+1)
 
          u(:,k) = u_in(:,nz-k+1)
          v(:,k) = v_in(:,nz-k+1)

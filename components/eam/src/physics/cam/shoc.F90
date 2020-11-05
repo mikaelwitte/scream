@@ -83,7 +83,7 @@ logical(btype), parameter :: dothetal_skew = .false.
 !  In the long run, set this as a namelist variable.
 !  May even want to put this in shoc_intr?
 !logical, parameter :: do_edmf = .true.
-logical, parameter :: edmf_condensation = .true.
+logical, parameter :: edmf_condensation = .false.
 
 ! ========
 ! Below define some parameters for SHOC
@@ -453,7 +453,7 @@ subroutine shoc_main ( &
     if (do_edmf) then
        do_mfdif = .true.
        call integrate_mf(&
-               edmf_condensation,exner,&                 ! Input flag for condensation subroutine
+               edmf_condensation,&                       ! Input flag for condensation subroutine
                shcol, nlev, nlevi, dtime,&               ! Input
                zt_grid, zi_grid, dz_zt, presi,&          ! Input
                nup, u_wind, v_wind, thetal, thv, qw,&    ! Input
@@ -506,8 +506,8 @@ subroutine shoc_main ( &
     call wthv_mf(&
        shcol,nlev,nlevi,&             ! Input
        wthv_sec,thv,&                 ! Input
-       s_ae, s_aw, s_awthv,&          ! Input
-       wthv_sec_tot)
+       mf_ae, mf_aw, mf_awthv,&       ! Input
+       mf_thvflx_zt, wthv_sec_tot)    ! Output
 
      call linear_interp(zt_grid,zi_grid,thv,thv_zi,nlev,nlevi,shcol,0._rtype)
      call calc_mf_vertflux(shcol,nlev,nlevi,mf_aw,mf_awthv,thv_zi,mf_thvflx)
@@ -524,7 +524,7 @@ subroutine shoc_main ( &
     ! MKW TODO: add MF buoyancy flux to inputs
     call shoc_tke(&
        shcol,nlev,nlevi,dtime,&             ! Input
-       wthv_sec_tot,shoc_mix,&              ! Input
+       wthv_sec,shoc_mix,&              ! Input
        dz_zi,dz_zt,pres,&                   ! Input
        u_wind,v_wind,brunt,obklen,&         ! Input
        zt_grid,zi_grid,pblh,&               ! Input

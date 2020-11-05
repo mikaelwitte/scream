@@ -700,6 +700,8 @@ end function shoc_implements_cnst
    logical :: lqice(pcnst)
    real(r8) :: relvarmax
 
+   logical :: do_edmf_in
+
    !------------------------------------------------------------------!
    !------------------------------------------------------------------!
    !------------------------------------------------------------------!
@@ -900,6 +902,7 @@ end function shoc_implements_cnst
    ! ------------------------------------------------- !
    ! Actually call SHOC                                !
    ! ------------------------------------------------- !
+   do_edmf_in = .true. ! MKW TODO: set this is a namelist variable
 
    call shoc_main( &
         ncol, pver, pverp, dtime, nadv, &                                                         ! Input
