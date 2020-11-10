@@ -39,7 +39,7 @@ contains
   !  Eddy-diffusivity mass-flux routine                                                                               !
   ! =============================================================================== !
 
-  subroutine integrate_mf(do_condensation,                         & ! input
+  subroutine integrate_mf(do_condensation, exner,                  & ! input
                  shcol, nz, nzi, dt,                               & ! input
                  zt_in, zi_in, dz_zt_in, p_in,                     & ! input - MKW 20200804 removed iex and dz_zi_in
                  nup,    u_in,   v_in,   thl_in,   thv_in, qt_in,  & ! input
@@ -79,6 +79,7 @@ contains
        ! physics controls
        logical, intent(in) :: do_condensation
        integer, intent(in) :: shcol,nz,nzi,nup
+       real(rtype), dimension(shcol,nz),  intent(in) :: exner
        real(rtype), dimension(shcol,nz),  intent(in) :: zt_in,dz_zt_in,p_in !,iex_in
        ! MKW TODO: remove zi_in as an argument, was only needed for linear_interp calls that were removed on 2020/09/01
        real(rtype), dimension(shcol,nzi), intent(in) :: zi_in
@@ -102,7 +103,7 @@ contains
 
   ! INTERNAL VARIABLES
   ! flipped variables (i.e. index 1 is at surface)
-       real(rtype), dimension(shcol,nz)  :: zt, dz_zt, p
+       real(rtype), dimension(shcol,nz)  :: zt, dz_zt, iexner, p
        real(rtype), dimension(shcol,nzi) :: zi
        real(rtype), dimension(shcol,nz)  :: u,v,thl,qt,qc,thv
   ! flipped updraft properties (i.e. index 1 is at surface)
@@ -176,6 +177,7 @@ contains
        if (k<nzi) then
          zt(:,k) = zt_in(:,nz-k+1)
          dz_zt(:,k) = dz_zt_in(:,nz-k+1)
+         exner_i(:,k) = exner(:,nz-k+1)
 
          u(:,k) = u_in(:,nz-k+1)
          v(:,k) = v_in(:,nz-k+1)
@@ -262,7 +264,7 @@ contains
          !if (debug) then
          !   enti(:,:) = 4
          !else
-         call poisson( nz, nup, entf, enti, thl(j,nz))
+         call Poisson( nz, nup, entf, enti, thl(j,nz))
          !endif
 
          ! entrainment: Ent=Ent0/dz*P(dz/L0)
@@ -682,29 +684,29 @@ contains
 
     end subroutine set_seed_from_state
 
-    subroutine knuth(lambda,kout)
-    !**********************************************************************
-    ! Discrete random poisson from Knuth
-    ! The Art of Computer Programming, v2, 137-138
-    ! By Adam Herrington
-    !**********************************************************************
-
-         real(rtype), intent(in) :: lambda
-         integer, intent(out) :: kout
-
-         !Local variables
-         real(rtype) :: puni, tmpuni, explam
-         integer  :: k
-
-         k = 0
-         explam = exp(-1._rtype*lambda)
-         puni = 1._rtype
-         do while (puni.gt.explam)
-           k = k + 1
-           call random_number(tmpuni)
-           puni = puni*tmpuni
-         end do
-         kout = k - 1
+    ! subroutine knuth(lambda,kout)
+    ! !**********************************************************************
+    ! ! Discrete random poisson from Knuth
+    ! ! The Art of Computer Programming, v2, 137-138
+    ! ! By Adam Herrington
+    ! !**********************************************************************
+    !
+    !      real(rtype), intent(in) :: lambda
+    !      integer, intent(out) :: kout
+    !
+    !      !Local variables
+    !      real(rtype) :: puni, tmpuni, explam
+    !      integer  :: k
+    !
+    !      k = 0
+    !      explam = exp(-1._rtype*lambda)
+    !      puni = 1._rtype
+    !      do while (puni.gt.explam)
+    !        k = k + 1
+    !        call random_number(tmpuni)
+    !        puni = puni*tmpuni
+    !      end do
+    !      kout = k - 1
 
     end subroutine knuth
 
@@ -1089,6 +1091,149 @@ contains
   ! 	RETURN
   !
   ! 	END FUNCTION random_exponential
+
+    subroutine Poisson(nz,nup,mu,POI,seed)
+      implicit none
+      integer, intent(in) :: nz,nup
+      real,dimension(nz,nup),intent(in) :: MU
+      integer, dimension(nz,nup), intent(out) :: POI
+      integer,dimension(2),intent(in) :: seed
+      integer :: seed_len,i,j
+      integer,allocatable:: the_seed(:)
+
+      !Begin code
+      !if (seed .le. 0) then seed=max(-seed,1)
+
+
+      call random_seed(SIZE=seed_len)
+      allocate(the_seed(seed_len))
+      the_seed(1:2)=seed
+      ! Gfortran uses longer seeds, so fill the rest with zero
+      if (seed_len > 2) the_seed(3:) = seed(2)
+
+
+      call random_seed(put=the_seed)
+
+
+      do i=1,nz
+        do j=1,nup
+           poi(i,j)=poidev(mu(i,j))
+        enddo
+      enddo
+
+    end subroutine Poisson
+
+    FUNCTION poidev(xm)
+      IMPLICIT NONE
+      REAL(rtype), INTENT(IN) :: xm
+      REAL(rtype) :: poidev
+      REAL(rtype), PARAMETER :: PI=3.141592653589793238462643383279502884197_rtype
+      !Returns as a floating-point number an integer value that is a random deviate drawn from a
+      !Poisson distribution of mean xm, using ran1 as a source of uniform random deviates.
+      REAL(rtype) :: em,harvest,t,y
+      REAL(rtype), SAVE :: alxm,g,oldm=-1.0_rtype,sq
+
+      !Begin code
+      !oldm is a flag for whether xm has changed since last call.
+      if (xm < 12.0) then !Use direct method.
+        if (xm /= oldm) then
+          oldm=xm
+          g=exp(-xm) !If xm is new, compute the exponential.
+        end if
+        em=-1
+        t=1.0
+        do
+          em=em+1.0_rtype     !Instead of adding exponential deviates it is
+                           !equivalent to multiply uniform deviates.
+                           !We never actually have to take the log;
+                           !merely compare to the pre-computed exponential.
+          call random_number(harvest)
+          t=t*harvest
+          if (t <= g) exit
+        end do
+      else      !    Use rejection method.
+        if (xm /= oldm) then  !If xm has changed since the last call, then precompute
+                               !some functions that occur below.
+          oldm=xm
+          sq=sqrt(2.0_rtype*xm)
+          alxm=log(xm)
+          g=xm*alxm-gammln_s(xm+1.0_rtype) ! The function gammln is the natural log of the
+                                        ! gamma function, as given in §6.1.
+        end if
+        do
+          do
+            call random_number(harvest)  !y is a deviate from a Lorentzian comparison
+            y=tan(PI*harvest)   !function.
+            em=sq*y+xm          !em is y, shifted and scaled.
+            if (em >= 0.0) exit !Reject if in regime of zero probability.
+          end do
+          em=int(em)          ! The trick for integer-valued distributions.
+          t=0.9_rtype*(1.0_rtype+y**2)*exp(em*alxm-gammln_s(em+1.0_rtype)-g)
+          !The ratio of the desired distribution to the comparison function; we accept or reject
+          !by comparing it to another uniform deviate. The factor 0.9 is chosen so that t never
+          !exceeds 1.
+          call random_number(harvest)
+          if (harvest <= t) exit
+        end do
+      end if
+      poidev=em
+    END FUNCTION poidev
+
+    FUNCTION arth_d(first,increment,n)
+      implicit none
+      REAL(rtype8), INTENT(IN) :: first,increment
+      INTEGER(itype), PARAMETER :: NPAR_ARTH=16,NPAR2_ARTH=8
+      INTEGER(itype), INTENT(IN) :: n
+      REAL(rtype8), DIMENSION(n) :: arth_d
+      INTEGER(itype) :: k,k2
+      REAL(rtype8) :: temp
+
+      ! Begin code
+      if (n > 0) arth_d(1)=first
+      if (n <= NPAR_ARTH) then
+        do k=2,n
+          arth_d(k)=arth_d(k-1)+increment
+        end do
+      else
+        do k=2,NPAR2_ARTH
+          arth_d(k)=arth_d(k-1)+increment
+        end do
+        temp=increment*NPAR2_ARTH
+        k=NPAR2_ARTH
+        do
+          if (k >= n) exit
+          k2=k+k
+          arth_d(k+1:min(k2,n))=temp+arth_d(1:min(k,n-k))
+          temp=temp+temp
+          k=k2
+        end do
+      end if
+    END FUNCTION arth_d
+
+    FUNCTION gammln_s(xx)
+      IMPLICIT NONE
+      REAL(rtype), INTENT(IN) :: xx
+      REAL(rtype) :: gammln_s
+      !Returns the value ln[Γ(xx)] for xx > 0.
+      REAL(rtype8) :: tmp,x
+      !Internal arithmetic will be done in double precision, a nicety that you can omit if five-figure
+      !accuracy is good enough.
+      REAL(rtype8) :: stp = 2.5066282746310005_rtype8
+      REAL(rtype8), DIMENSION(6) :: coef = (/76.18009172947146_rtype8,&
+        -86.50532032941677_rtype8,24.01409824083091_rtype8,&
+        -1.231739572450155_rtype8,0.1208650973866179e-2_rtype8,&
+        -0.5395239384953e-5_rtype8/)
+
+      !Begin code
+      !call assert(xx > 0.0, ’gammln_s arg’)
+      !if (xx .le. 0.) print *,'gammaln fails'
+      x=xx
+      tmp=x+5.5_rtype8
+      tmp=(x+0.5_rtype8)*log(tmp)-tmp
+      gammln_s=tmp+log(stp*(1.000000000190015_rtype8+&
+      sum(coef(:)/arth_d(x+1.0_rtype8,1.0_rtype8,size(coef))))/x)
+    END FUNCTION gammln_s
+
 
 end module edmf
 
