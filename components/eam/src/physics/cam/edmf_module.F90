@@ -1125,12 +1125,10 @@ contains
 
       do i=1,nz
         do j=1,nup
-           poi(i,j)=poidev(mu(i,j))
-           if (poi(i,j)<0._rtype) then
-             poi(i,j)=-poi(i,j)
-             print *,'poi<0'
-           elseif (poi(i,j)>10000._rtype) then
-             print *,'poi>1e4'
+           poi(i,j)=int(poidev(mu(i,j)))+1
+           if (poi(i,j)<1) then
+             !poi(i,j)=-poi(i,j)
+             print *,'poi<1'
            end if
         enddo
       enddo
