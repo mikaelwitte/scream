@@ -4,7 +4,7 @@ module edmf
 
   use physconst,     only: rgas => rair, cp => cpair, ggr => gravit, &
                            lcond => latvap, lice => latice, eps => zvir
-  ! use shoc,          only: linear_interp
+  use spmd_utils,    only: masterproc
 
   implicit none
 
@@ -79,9 +79,9 @@ contains
        ! physics controls
        logical, intent(in) :: do_condensation
        integer, intent(in) :: shcol,nz,nzi,nup
-       real(rtype), dimension(shcol,nz),  intent(in) :: zt_in,dz_zt_in,p_in !,iex_in
+       real(rtype), dimension(shcol,nz),  intent(in) :: zt_in,dz_zt_in
        ! MKW TODO: remove zi_in as an argument, was only needed for linear_interp calls that were removed on 2020/09/01
-       real(rtype), dimension(shcol,nzi), intent(in) :: zi_in
+       real(rtype), dimension(shcol,nzi), intent(in) :: zi_in,p_in
        real(rtype), dimension(shcol,nz),  intent(in) :: u_in,v_in,thl_in,qt_in,qc_in,thv_in  ! all on thermodynamic/midpoint levels
 
        real(rtype), dimension(shcol), intent(in) :: ust, wthl, wqt
@@ -171,24 +171,24 @@ contains
 
 
   ! Flip vertical coordinates and all input variables
-     do k=1,nzi
+     do k=1,nz
        ! thermodynamic grid variables
-       if (k<nzi) then
-         zt(:,k) = zt_in(:,nz-k+1)
-         dz_zt(:,k) = dz_zt_in(:,nz-k+1)
+       zt(:,k) = zt_in(:,nz-k+1)
+       dz_zt(:,k) = dz_zt_in(:,nz-k+1)
 
-         u(:,k) = u_in(:,nz-k+1)
-         v(:,k) = v_in(:,nz-k+1)
-         thl(:,k) = thl_in(:,nz-k+1)
-         qt(:,k) = qt_in(:,nz-k+1)
-         qc(:,k) = qc_in(:,nz-k+1)
-         thv(:,k) = thv_in(:,nz-k+1)
-       endif
+       u(:,k) = u_in(:,nz-k+1)
+       v(:,k) = v_in(:,nz-k+1)
+       thl(:,k) = thl_in(:,nz-k+1)
+       qt(:,k) = qt_in(:,nz-k+1)
+       qc(:,k) = qc_in(:,nz-k+1)
+       thv(:,k) = thv_in(:,nz-k+1)
 
        ! momentum altitude grid
        zi(:,k) = zi_in(:,nzi-k+1)
-       p(:,k) = p_in(:,nzi-k+1)
+       p(:,k)  =  p_in(:,nzi-k+1)
      enddo
+     zi(:,nzi) = zi_in(:,1);
+     p(:,nzi)  =  p_in(:,1);
 
 
   ! INITIALIZE OUTPUT VARIABLES
@@ -253,6 +253,7 @@ contains
          ! compute entrainment coefficient
          ! get dz/L0
          do i=1,nup
+           entf(1,i) =0._rtype
            do k=2,nz
              entf(k,i) = dzt(k) / L0
            enddo
@@ -262,7 +263,7 @@ contains
          !if (debug) then
          !   enti(:,:) = 4
          !else
-         call Poisson( nz, nup, entf, enti, (/69, 420/))
+         call Poisson( nz, nup, entf, enti, 69._rtype)
          !endif
 
          ! entrainment: Ent=Ent0/dz*P(dz/L0)
@@ -325,6 +326,11 @@ contains
 
              entexp  = exp(-ent(k,i)*dzt(k))
              entexpu = exp(-ent(k,i)*dzt(k)/3._rtype)
+             if (entexp>1._rtype) then
+               print *,'entexp>1'
+             elseif (entexp<0._rtype) then
+               print *,'entexp<0'
+             endif
 
              qtn  = qt(j,k-1) *(1._rtype-entexp ) + upqt (k-1,i)*entexp
              thln = thl(j,k-1)*(1._rtype-entexp ) + upthl(k-1,i)*entexp
@@ -1091,31 +1097,41 @@ contains
   ! 	END FUNCTION random_exponential
 
     subroutine Poisson(nz,nup,mu,POI,seed)
+      use time_manager, only: is_first_step
       implicit none
       integer, intent(in) :: nz,nup
       real(rtype),dimension(nz,nup),intent(in) :: MU
       integer, dimension(nz,nup), intent(out) :: POI
-      integer,dimension(2),intent(in) :: seed
+      real(rtype), intent(in) :: seed
       integer :: seed_len,i,j
       integer,allocatable:: the_seed(:)
 
       !Begin code
       !if (seed .le. 0) then seed=max(-seed,1)
 
+      if (is_first_step()) then
+        call random_seed(SIZE=seed_len)
+        allocate(the_seed(seed_len))
+        the_seed(1) = int((seed - int(seed)) * 1000000000._rtype)
+        if (seed_len > 1) the_seed(2:) = the_seed(1)
+        !the_seed(1:2)=seed
+        !! Gfortran uses longer seeds, so fill the rest with zero
+        !if (seed_len > 2) the_seed(3:) = seed(2)
 
-      call random_seed(SIZE=seed_len)
-      allocate(the_seed(seed_len))
-      the_seed(1:2)=seed
-      ! Gfortran uses longer seeds, so fill the rest with zero
-      if (seed_len > 2) the_seed(3:) = seed(2)
 
-
-      call random_seed(put=the_seed)
+        call random_seed(put=the_seed)
+      end if
 
 
       do i=1,nz
         do j=1,nup
            poi(i,j)=poidev(mu(i,j))
+           if (poi(i,j)<0._rtype) then
+             poi(i,j)=-poi(i,j)
+             print *,'poi<0'
+           elseif (poi(i,j)>10000._rtype) then
+             print *,'poi>1e4'
+           end if
         enddo
       enddo
 
@@ -1139,7 +1155,7 @@ contains
           g=exp(-xm) !If xm is new, compute the exponential.
         end if
         em=-1
-        t=1.0
+        t=1.0_rtype
         do
           em=em+1.0_rtype     !Instead of adding exponential deviates it is
                            !equivalent to multiply uniform deviates.
@@ -1180,10 +1196,10 @@ contains
     FUNCTION arth_d(first,increment,n)
       implicit none
       REAL(rtype8), INTENT(IN) :: first,increment
-      INTEGER(itype), PARAMETER :: NPAR_ARTH=16,NPAR2_ARTH=8
-      INTEGER(itype), INTENT(IN) :: n
+      INTEGER, PARAMETER :: NPAR_ARTH=16,NPAR2_ARTH=8
+      INTEGER, INTENT(IN) :: n
       REAL(rtype8), DIMENSION(n) :: arth_d
-      INTEGER(itype) :: k,k2
+      INTEGER :: k,k2
       REAL(rtype8) :: temp
 
       ! Begin code
