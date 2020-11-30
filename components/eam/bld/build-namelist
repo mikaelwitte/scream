@@ -3593,6 +3593,15 @@ add_default($nl, 'do_shoc_sgs');
 my $shoc_sgs = $nl->get_value('do_shoc_sgs');
 if ($shoc_sgs  =~ /$TRUE/io) {
    add_default($nl, 'shoc_timestep');
+
+   # SHOC+MF
+   add_default($nl, 'mf_L0');
+   add_default($nl, 'mf_ent0');
+   add_default($nl, 'mf_nup');
+   add_default($nl, 'do_edmf');
+   add_default($nl, 'do_condensation');
+   add_default($nl, 'do_mf_diag');
+   add_default($nl, 'do_wthv_mf');
 }
 
 # P3
