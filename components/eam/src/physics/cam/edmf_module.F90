@@ -7,10 +7,19 @@ module edmf
   use spmd_utils,    only: masterproc
 
   implicit none
-
-  public :: integrate_mf, calc_mf_vertflux, compute_tmpi3!init_random_seed, calc_mf_vertflux, compute_tmpi3
-
+  
   private
+  
+  public :: integrate_mf, calc_mf_vertflux, compute_tmpi3!init_random_seed, calc_mf_vertflux, compute_tmpi3
+  public :: mf_readnl, do_edmf, do_condensation, do_mf_diag, do_wthv_mf
+  
+  real(rtype) :: mf_L0   = 0._rtype    ! Default in namelist_defaults_cam.xml: 50 m
+  real(rtype) :: mf_ent0 = 0._rtype    ! Default in namelist_defaults_cam.xml: 0.2
+  integer     :: mf_nup  = 0           ! Default in namelist_defaults_cam.xml: 10 plumes
+  logical, protected :: do_edmf         = .false.
+  logical, protected :: do_condensation = .false.
+  logical, protected :: do_mf_diag      = .false.
+  logical, protected :: do_wthv_mf      = .false.
 
   !=========================================================
   ! Physical constants used for mass flux plumes
@@ -38,11 +47,57 @@ contains
   ! =============================================================================== !
   !  Eddy-diffusivity mass-flux routine                                                                               !
   ! =============================================================================== !
+  subroutine mf_readnl(nlfile)
+  ! =============================================================================== !
+  ! MF namelists                                                                    !
+  ! =============================================================================== !
+    use namelist_utils,  only: find_group_name
+    use cam_abortutils,  only: endrun
+    use mpishorthand  ! in spmd_utils.F90: mpiint, mpii8, mpichar, mpilog, mpipk, mpic16, mpir8, mpir4, mpicom, mpimax
+    
+    character(len=*), intent(in) :: nlfile  ! filepath for file containing namelist input
 
-  subroutine integrate_mf(do_condensation,                         & ! input
-                 shcol, nz, nzi, dt,                               & ! input
+    integer :: iunit, read_status
+
+    namelist /shoc_mf_nl/ mf_L0, mf_ent0, mf_nup, do_edmf, do_condensation, do_mf_diag, do_wthv_mf
+
+    !  Read namelist to determine if SHOC history should be called
+    if (masterproc) then
+      !iunit = getunit()
+      open( newunit=iunit, file=trim(nlfile), status='old' )
+
+      call find_group_name(iunit, 'shoc_mf_nl', status=read_status)
+      if (read_status == 0) then
+         read(iunit, nml=shoc_mf_nl, iostat=read_status)
+         if (read_status /= 0) then
+            call endrun('mf_readnl:  error reading namelist')
+         end if
+      end if
+      close(iunit) 
+      !close(unit=iunit)
+      !call freeunit(iunit)
+    end if
+
+#ifdef SPMD
+! Broadcast namelist variables
+      call mpibcast(mf_L0,            1,    mpir8,   0, mpicom)
+      call mpibcast(mf_ent0,          1,    mpir8,   0, mpicom)
+      call mpibcast(mf_nup,           1,   mpiint,   0, mpicom)
+      call mpibcast(do_edmf,          1,   mpilog,   0, mpicom)
+      call mpibcast(do_condensation,  1,   mpilog,   0, mpicom)  
+      call mpibcast(do_mf_diag,       1,   mpilog,   0, mpicom)  
+      call mpibcast(do_wthv_mf,       1,   mpilog,   0, mpicom)  
+#endif
+
+    !if ((.not. do_edmf) .and. do_mf_diag ) then
+    !   call endrun('shoc_mf_nl: Error - cannot turn on do_mf_diag without also turning on do_edmf')
+    !end if
+    
+  end subroutine mf_readnl
+  
+  subroutine integrate_mf(shcol, nz, nzi, dt,                      & ! input
                  zt_in, zi_in, dz_zt_in, p_in,                     & ! input - MKW 20200804 removed iex and dz_zi_in
-                 nup,    u_in,   v_in,   thl_in,   thv_in, qt_in,  & ! input
+                 u_in,   v_in,   thl_in,   thv_in, qt_in,          & ! input
                  ust,    wthl,   wqt,    pblh,     qc_in,          & ! input
                  dry_a_out,   moist_a_out,                         & ! output: updraft properties for diagnostics
                  dry_w_out,   moist_w_out,                         & ! output: updraft properties for diagnostics
@@ -57,11 +112,11 @@ contains
                  awql_out, awqi_out,                               & ! output: variables needed for  diffusion solver
                  awu_out, awv_out)                                   ! output: variables needed for  diffusion solver
                  !thlflx_out, qtflx_out )                             ! output: MF turbulent flux diagnostics
-
+  
+  ! ================================================================================= !
   ! Original author: Marcin Kurowski, JPL
-  ! Modified heavily by Mikael Witte and Maria Chinita Candeias, UCLA/JPL for implementation in E3SM
-  ! Last modified 4 Aug. 2020
-
+  ! Modified heavily by Mikael Witte and Maria Chinita, UCLA/JPL for implementation in E3SM
+  !
   !
   ! Variables needed for solver:
   ! ae = sum_i (1-a_i)
@@ -70,129 +125,154 @@ contains
   ! awqt  = sum(a_i w_i*qt_i)
   ! awql,awqi,awu,awv similar to above except for different variables - not currently coupled to SHOC diffusion solver
   !
-
+  !
   ! - mass flux variables are computed on edges (i.e. momentum grid):
   !  upa,upw,upqt,... 1:nzi
   !  dry_a,moist_a,dry_w,moist_w, ... 1:nzi
+  ! ================================================================================= !
+  
+     ! ============================================================================== ! 
+     ! INPUTS   
+     ! physics controls
+     integer, intent(in) :: shcol,nz,nzi
+     real(rtype), dimension(shcol,nz),  intent(in) :: zt_in,   dz_zt_in
+     ! MKW TODO: remove zi_in as an argument, was only needed for linear_interp calls that were removed on 2020/09/01
+     real(rtype), dimension(shcol,nzi), intent(in) :: zi_in,   p_in
+     real(rtype), dimension(shcol,nz),  intent(in) :: u_in,v_in,thl_in,qt_in,qc_in,thv_in  ! all on thermodynamic/midpoint levels
 
-  ! INPUTS
-       ! physics controls
-       logical, intent(in) :: do_condensation
-       integer, intent(in) :: shcol,nz,nzi,nup
-       real(rtype), dimension(shcol,nz),  intent(in) :: zt_in,dz_zt_in
-       ! MKW TODO: remove zi_in as an argument, was only needed for linear_interp calls that were removed on 2020/09/01
-       real(rtype), dimension(shcol,nzi), intent(in) :: zi_in,p_in
-       real(rtype), dimension(shcol,nz),  intent(in) :: u_in,v_in,thl_in,qt_in,qc_in,thv_in  ! all on thermodynamic/midpoint levels
+     real(rtype), dimension(shcol), intent(in) :: ust,   wthl,   wqt
+     real(rtype), dimension(shcol), intent(in) :: pblh
+     real(rtype), value :: dt ! only needed for random number generator
+     
+     ! ============================================================================== !
+     ! OUTPUTS
+     ! updraft properties
+     real(rtype),dimension(shcol,nzi), intent(out) :: dry_a_out,    moist_a_out,     &
+                                                      dry_w_out,    moist_w_out,     &
+                                                      dry_qt_out,   moist_qt_out,    &
+                                                      dry_thl_out,  moist_thl_out,   &
+                                                      dry_u_out,    moist_u_out,     &
+                                                      dry_v_out,    moist_v_out,     &
+                                                      moist_qc_out
+     ! variables needed for diffusion solver
+     real(rtype),dimension(shcol,nzi), intent(out) :: ae_out,       aw_out,          &
+                                                      awthv_out,    awthl_out,       &
+                                                      awqt_out,     awql_out,        &
+                                                      awqi_out,     awu_out,         &
+                                                      awv_out
+                                                        
+     !! Flux diagnostics - currently diagnosed elsewhere
+     !real(rtype),dimension(shcol,nzi), intent(out) :: thlflx_out, qtflx_out
+     
+     ! ============================================================================== !
+     ! INTERNAL VARIABLES
+     !
+     ! flipped variables (i.e. here index 1 is at surface)
+     real(rtype), dimension(shcol,nz)  :: zt, dz_zt
+     real(rtype), dimension(shcol,nzi) :: zi, p
+     real(rtype), dimension(shcol,nz)  :: u, v, thl, qt, qc, thv
+     
+     
+     ! flipped updraft properties (i.e. index 1 is at surface)
+     real(rtype), dimension(shcol,nzi) :: dry_a,     moist_a,      &
+                                          dry_w,     moist_w,      &
+                                          dry_qt,    moist_qt,     &
+                                          dry_thl,   moist_thl,    &
+                                          dry_u,     moist_u,      &
+                                          dry_v,     moist_v,      &
+                                                     moist_qc,     &
+                                          ae,        aw,           &
+                                          awu,       awv,          &
+                                          awthv,     awthl,        &
+                                          awqt,      awql,         &
+                                          awqi                    
+                                                     
+                                          
+     !real(rtype), dimension(shcol,nzi) :: thlflx, qtflx
 
-       real(rtype), dimension(shcol), intent(in) :: ust, wthl, wqt
-       real(rtype), dimension(shcol), intent(in) :: pblh
-       real(rtype), value :: dt ! only needed for random number generator
+     ! sums over all plumes
+     real(rtype), dimension(shcol,nz) :: moist_th, dry_th, awqv, awth
+     
 
-  ! OUTPUTS
-  ! updraft properties
-       real(rtype),dimension(shcol,nzi), intent(out) :: &
-              dry_a_out, moist_a_out, dry_w_out, moist_w_out,                &
-              dry_qt_out, moist_qt_out, dry_thl_out, moist_thl_out,          &
-              dry_u_out,  moist_u_out,  dry_v_out,   moist_v_out,    moist_qc_out
-  ! variables needed for diffusion solver
-       real(rtype),dimension(shcol,nzi), intent(out) :: &
-              ae_out,aw_out,awthv_out,awthl_out,awqt_out,awql_out,awqi_out,awu_out,awv_out
-  ! flux diagnostics - currently diagnosed elsewhere
-       !real(rtype),dimension(shcol,nzi), intent(out) :: thlflx_out, qtflx_out
+     ! updraft properties
+     real(rtype), dimension(nzi,mf_nup) :: upw,      upa,      &
+                                           upthl,    upthv,    &
+                                                     upth,     &
+                                           upqt,     upqc,     &
+                                           upql,     upqv,     &
+                                           upqi,     ups,      &
+                                           upu,      upv
+                                           
 
-  ! INTERNAL VARIABLES
-  ! flipped variables (i.e. index 1 is at surface)
-       real(rtype), dimension(shcol,nz)  :: zt, dz_zt
-       real(rtype), dimension(shcol,nzi) :: zi, p
-       real(rtype), dimension(shcol,nz)  :: u,v,thl,qt,qc,thv
-  ! flipped updraft properties (i.e. index 1 is at surface)
-       real(rtype), dimension(shcol,nzi) :: dry_a, moist_a, dry_w, moist_w, &
-                                   dry_qt, moist_qt, dry_thl, moist_thl, &
-                                   dry_u, moist_u, dry_v, moist_v, moist_qc
-       real(rtype), dimension(shcol,nzi) :: ae, aw, awthv, awthl, awqt, awql, awqi, awu, awv
-       !real(rtype), dimension(shcol,nzi) :: thlflx, qtflx
-
-  ! sums over all plumes
-       real(rtype), dimension(shcol,nz) :: moist_th, dry_th, awqv, awth
-
-  ! updraft properties
-       real(rtype), dimension(nzi,nup) ::                &
-                   upw, upthl, upqt, upqc, upth, upqv, upql,  &
-                   upqi, upa, upu, upv, upthv, ups
-  ! entrainment variables
-       real(rtype), dimension(nz,nup) :: ent,entf
-       integer,  dimension(nz,nup) :: enti
-  ! internal variables
-       integer :: k,j,i,ih
-       real(rtype) :: wthv, wstar, qstar, thstar, sigmaw, sigmaqt, sigmath, z0, &
-                   wmin, wmax, wlv, wtv, wp
-       real(rtype) :: pbj, b, qtn, thln, thvn, thn, qcn, qln, qin, un, vn, wn2, &
-                   entexp, entexpu, entw
-
-  ! internal surface cont
-
-       real(rtype) :: iexh
-       real(rtype) :: dzt(nz)!, dzi(nzi)
-
-  ! w parameters
-       real(rtype),parameter :: &
-         wa = 1._rtype, &
-         wb = 1.5_rtype
-
-  ! entrainment parameters
-       real(rtype),parameter :: &
-  !      L0   = 150._rtype,&
-  !       ent0 = .5_rtype
-  !!       L0   = 150._rtype,&
-  !!       ent0 = .8_rtype
-  !        L0   = 100._rtype,&
-  !        ent0 = .42_rtype
-           L0   = 50._rtype,&
-           ent0 = .22_rtype
-  !!      L0   = 50._rtype,&
-  !!       ent0 = .18_rtype
-  !       L0   = 25._rtype,&
-  !       ent0 = .11_rtype
-
-  !! parameters defining initial conditions for updrafts
-       real(rtype),parameter :: &
-  !       pwmin = 1.55_rtype,&
-          pwmin = 1.5_rtype,&
-          pwmax = 3._rtype
-
-  ! min values to avoid singularities
-       real(rtype),parameter :: &
-          wstarmin = 1.e-3, &
-          pblhmin  = 100.
-
-  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  !!!!!!!!!!!!!!!!!!!!!! BEGIN CODE !!!!!!!!!!!!!!!!!!!!!!!
-  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+     ! entrainment variables
+     real(rtype), dimension(nz,mf_nup) :: ent,  entf
+     integer,     dimension(nz,mf_nup) :: enti
+     
+     
+     ! other variables
+     integer     :: k,j,i,ih
+     
+     
+     real(rtype) :: wthv,       wstar,     qstar,   thstar,    &
+                    sigmaw,   sigmaqt,   sigmath,       z0,    &
+                    wmin,        wmax,       wlv,      wtv,    &
+                    wp
+                    
+                    
+     real(rtype) :: pbj,            b,       qtn,     thln,    &
+                    thvn,         thn,       qcn,      qln,    &
+                    qin,           un,        vn,      wn2,    &
+                    entexp,   entexpu,      entw,      iexh
 
 
-  ! Flip vertical coordinates and all input variables
+     ! internal surface cont
+     real(rtype) :: dzt(nz) !, dzi(nzi)
+
+
+     ! w parameters
+     ! virtual mass coefficients for w-eqn after Suselj etal 2019
+     real(rtype),parameter :: wa = 1._rtype,     &
+                              wb = 1.5_rtype
+
+
+     ! parameters defining initial conditions for updrafts
+     real(rtype),parameter :: pwmin = 1.5_rtype, &
+                              pwmax = 3._rtype
+
+     ! min values to avoid singularities
+     real(rtype),parameter :: wstarmin = 1.e-3,  &
+                              pblhmin  = 100.
+
+     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+     !!!!!!!!!!!!!!!!!!!!!! BEGIN CODE !!!!!!!!!!!!!!!!!!!!!!!
+     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ 
+
+     ! Flip vertical coordinates and all input variables
      do k=1,nz
        ! thermodynamic grid variables
-       zt(:,k) = zt_in(:,nz-k+1)
-       dz_zt(:,k) = dz_zt_in(:,nz-k+1)
+       zt(:,k)    =  zt_in(:,nz-k+1)
+       dz_zt(:,k) =  dz_zt_in(:,nz-k+1)
 
-       u(:,k) = u_in(:,nz-k+1)
-       v(:,k) = v_in(:,nz-k+1)
-       thl(:,k) = thl_in(:,nz-k+1)
-       qt(:,k) = qt_in(:,nz-k+1)
-       qc(:,k) = qc_in(:,nz-k+1)
-       thv(:,k) = thv_in(:,nz-k+1)
+       u(:,k)     =  u_in(:,nz-k+1)
+       v(:,k)     =  v_in(:,nz-k+1)
+       
+       thl(:,k)   =  thl_in(:,nz-k+1)
+       thv(:,k)   =  thv_in(:,nz-k+1)
+       
+       qt(:,k)    =  qt_in(:,nz-k+1)
+       qc(:,k)    =  qc_in(:,nz-k+1)
 
        ! momentum altitude grid
-       zi(:,k) = zi_in(:,nzi-k+1)
-       p(:,k)  =  p_in(:,nzi-k+1)
+       zi(:,k)    = zi_in(:,nzi-k+1)
+       p(:,k)     =  p_in(:,nzi-k+1)
      enddo
      zi(:,nzi) = zi_in(:,1);
      p(:,nzi)  =  p_in(:,1);
 
 
-  ! INITIALIZE OUTPUT VARIABLES
-  ! set updraft properties to zero
+     ! INITIALIZE OUTPUT VARIABLES
+     ! set updraft properties to zero
      dry_a     = 0._rtype
      moist_a   = 0._rtype
      dry_w     = 0._rtype
@@ -206,7 +286,7 @@ contains
      dry_v     = 0._rtype
      moist_v   = 0._rtype
      moist_qc  = 0._rtype
-  ! outputs - variables needed for solver
+     ! outputs - variables needed for solver
      aw        = 0._rtype
      awthv     = 0._rtype
      awthl     = 0._rtype
@@ -216,17 +296,17 @@ contains
      awqi      = 0._rtype
      awu       = 0._rtype
      awv       = 0._rtype
-  ! outputs - diagnostics
+     ! outputs - diagnostics
      !thlflx    = 0._rtype
      !qtflx     = 0._rtype
 
-  ! this is the environmental area - by default 1.
+     ! this is the environmental area - by default 1.
      ae = 1._rtype
 
 
-  ! START MAIN COMPUTATION
-  ! NOTE: SHOC does not invert the vertical coordinate, which by default is ordered from lowest to highest pressure
-  !     (i.e. top of atmosphere to bottom) so surface-based do loops are performed in reverse (i.e. from nz to 1)
+     ! START MAIN COMPUTATION
+     ! NOTE: SHOC does not invert the vertical coordinate, which by default is ordered from lowest to highest pressure
+     ! (i.e. top of atmosphere to bottom) so surface-based do loops are performed in reverse (i.e. from nz to 1)
      do j=1,shcol
        ! zero out plume properties
        upw   = 0._rtype
@@ -252,25 +332,28 @@ contains
 
          ! compute entrainment coefficient
          ! get dz/L0
-         do i=1,nup
+         do i=1,mf_nup
            entf(1,i) =0._rtype
            do k=2,nz
-             entf(k,i) = dzt(k) / L0
+             entf(k,i) = dzt(k) / mf_L0
            enddo
          enddo
 
+         print*,'mf_L0 = ',mf_L0
+         print*,'mf_ent0 = ', mf_ent0 
+         print*, 'mf_nup = ',mf_nup
          ! get poisson P(dz/L0)
          !if (debug) then
          !   enti(:,:) = 4
          !else
-         call Poisson( nz, nup, entf, enti, 69._rtype)
+         call Poisson( nz, mf_nup, entf, enti, 69._rtype)
          !endif
 
          ! entrainment: Ent=Ent0/dz*P(dz/L0)
-         do i=1,nup
+         do i=1,mf_nup
            ent(1,i) = 0._rtype
            do k=2,nz
-             ent(k,i) = real( enti(k,i))*ent0/dzt(k)
+             ent(k,i) = real( enti(k,i))*mf_ent0/dzt(k)
            enddo
          enddo
 
@@ -286,10 +369,10 @@ contains
          wmin = sigmaw * pwmin
          wmax = sigmaw * pwmax
 
-         do i=1,nup
+         do i=1,mf_nup
 
-           wlv = wmin + (wmax-wmin) / (real(nup)) * (real(i)-1._rtype)
-           wtv = wmin + (wmax-wmin) / (real(nup)) * real(i)
+           wlv = wmin + (wmax-wmin) / (real(mf_nup)) * (real(i)-1._rtype)
+           wtv = wmin + (wmax-wmin) / (real(mf_nup)) * real(i)
 
            upw(1,i) = 0.5_rtype * (wlv+wtv)
            upa(1,i) = 0.5_rtype * erf( wtv/(sqrt(2._rtype)*sigmaw) ) &
@@ -321,7 +404,7 @@ contains
          enddo
 
          ! integrate updrafts
-         do i=1,nup
+         do i=1,mf_nup
            do k=2,nzi
 
              entexp  = exp(-ent(k,i)*dzt(k))
@@ -381,7 +464,7 @@ contains
          do k=1,nzi
 
            ! first sum over all i-updrafts
-           do i=1,nup
+           do i=1,mf_nup
              if (upqc(k,i)>0.) then
                moist_a(j,k)   = moist_a(j,k)   + upa(k,i)
                moist_w(j,k)   = moist_w(j,k)   + upa(k,i)*upw(k,i)
@@ -439,7 +522,7 @@ contains
          enddo
 
          do k=1,nzi
-           do i=1,nup
+           do i=1,mf_nup
              ae  (j,k) = ae  (j,k) - upa(k,i)
              aw  (j,k) = aw  (j,k) + upa(k,i)*upw(k,i)
              awu (j,k) = awu (j,k) + upa(k,i)*upw(k,i)*upu(k,i)
@@ -647,11 +730,11 @@ contains
 
   subroutine poisson_arh(nz,nup,lambda,poi,state)
 
-         integer, intent(in)                     :: nz,nup
+         integer, intent(in)                        :: nz,nup
          real(rtype), intent(in)                    :: state
          real(rtype), dimension(nz,nup), intent(in) :: lambda
-         integer, dimension(nz,nup), intent(out) :: poi
-         integer                                 :: i,j
+         integer, dimension(nz,nup), intent(out)    :: poi
+         integer                                    :: i,j
 
          call set_seed_from_state(state)
 
