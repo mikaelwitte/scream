@@ -205,13 +205,17 @@ end function shoc_implements_cnst
     use namelist_utils,  only: find_group_name
     use cam_abortutils,  only: endrun
     use mpishorthand
+    use edmf,            only: mf_readnl
 
     character(len=*), intent(in) :: nlfile  ! filepath for file containing namelist input
 
     integer :: iunit, read_status
 
     namelist /shocpbl_diff_nl/ shoc_timestep
-
+    
+    !  Call SHOC+MF namelist
+    call mf_readnl(nlfile)
+    
     !  Read namelist to determine if SHOC history should be called
     if (masterproc) then
       iunit = getunit()
@@ -700,8 +704,6 @@ end function shoc_implements_cnst
    logical :: lqice(pcnst)
    real(r8) :: relvarmax
 
-   logical :: do_edmf_in
-
    !------------------------------------------------------------------!
    !------------------------------------------------------------------!
    !------------------------------------------------------------------!
@@ -902,7 +904,6 @@ end function shoc_implements_cnst
    ! ------------------------------------------------- !
    ! Actually call SHOC                                !
    ! ------------------------------------------------- !
-   do_edmf_in = .true. ! MKW TODO: set this is a namelist variable
 
    call shoc_main( &
         ncol, pver, pverp, dtime, nadv, &                                                         ! Input
@@ -923,7 +924,6 @@ end function shoc_implements_cnst
         uw_sec_out(:ncol,:), vw_sec_out(:ncol,:), w3_out(:ncol,:), &                              ! Output (diagnostic)
         wqls_out(:ncol,:),brunt_out(:ncol,:),rcm2(:ncol,:), &                                     ! Output (diagnostic)
         wthv_sec_tot(:ncol,:), &                                                                  ! Output (EDMF diagnostic)
-        do_edmf_in, &                                                                                ! Input (EDMF control)
         mf_dry_a(:ncol,:), mf_moist_a(:ncol,:), &                                                 ! Output (EDMF diagnostic)
         mf_dry_w(:ncol,:), mf_moist_w(:ncol,:), &                                                 ! Output (EDMF diagnostic)
         mf_dry_qt(:ncol,:), mf_moist_qt(:ncol,:), &                                               ! Output (EDMF diagnostic)
