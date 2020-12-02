@@ -3,11 +3,11 @@ module edmf
   use physics_utils, only: rtype, rtype8, itype!, btype ! MKW: btype not currently used
 
   use physconst,     only: rgas => rair, cp => cpair, ggr => gravit, &
-                           lcond => latvap, lice => latice, eps => zvir  !  ! (rh2o/rair) - 1
-  
+  use spmd_utils,    only: masterproc
+
   implicit none
 
-  public :: integrate_mf, calc_mf_vertflux, compute_tmpi3
+  public :: integrate_mf, calc_mf_vertflux, compute_tmpi3!init_random_seed, calc_mf_vertflux, compute_tmpi3
 
   private
 
@@ -38,23 +38,23 @@ contains
   !  Eddy-diffusivity mass-flux routine                                                                               !
   ! =============================================================================== !
 
-  subroutine integrate_mf(edmf_condensation, exner,                &
+  subroutine integrate_mf(do_condensation,                         & ! input
                  shcol, nz, nzi, dt,                               & ! input
                  zt_in, zi_in, dz_zt_in, p_in,                     & ! input - MKW 20200804 removed iex and dz_zi_in
                  nup,    u_in,   v_in,   thl_in,   thv_in, qt_in,  & ! input
                  ust,    wthl,   wqt,    pblh,     qc_in,          & ! input
-                 mf_dry_a,   mf_moist_a,                         & ! output: updraft properties for diagnostics
-                 mf_dry_w,   mf_moist_w,                         & ! output: updraft properties for diagnostics
-                 mf_dry_qt,  mf_moist_qt,                        & ! output: updraft properties for diagnostics
-                 mf_dry_thl, mf_moist_thl,                       & ! output: updraft properties for diagnostics
-                 mf_dry_u,   mf_moist_u,                         & ! output: updraft properties for diagnostics
-                 mf_dry_v,   mf_moist_v,                         & ! output: updraft properties for diagnostics
-                              mf_moist_qc,                        & ! output: updraft properties for diagnostics
-                 mf_ae, mf_aw,                                   & ! output: variables needed for  diffusion solver
-                 mf_awthv,                                        & ! output: variable needed for total wthv
-                 mf_awthl, mf_awqt,                              & ! output: variables needed for  diffusion solver
-                 mf_awql, mf_awqi,                               & ! output: variables needed for  diffusion solver
-                 mf_awu, mf_awv)                                   ! output: variables needed for  diffusion solver
+                 dry_a_out,   moist_a_out,                         & ! output: updraft properties for diagnostics
+                 dry_w_out,   moist_w_out,                         & ! output: updraft properties for diagnostics
+                 dry_qt_out,  moist_qt_out,                        & ! output: updraft properties for diagnostics
+                 dry_thl_out, moist_thl_out,                       & ! output: updraft properties for diagnostics
+                 dry_u_out,   moist_u_out,                         & ! output: updraft properties for diagnostics
+                 dry_v_out,   moist_v_out,                         & ! output: updraft properties for diagnostics
+                              moist_qc_out,                        & ! output: updraft properties for diagnostics
+                 ae_out, aw_out,                                   & ! output: variables needed for  diffusion solver
+                 awthv_out,                                        & ! output: variable needed for total wthv
+                 awthl_out, awqt_out,                              & ! output: variables needed for  diffusion solver
+                 awql_out, awqi_out,                               & ! output: variables needed for  diffusion solver
+                 awu_out, awv_out)                                   ! output: variables needed for  diffusion solver
                  !thlflx_out, qtflx_out )                             ! output: MF turbulent flux diagnostics
 
   ! Original author: Marcin Kurowski, JPL
@@ -73,34 +73,36 @@ contains
   ! - mass flux variables are computed on edges (i.e. momentum grid):
   !  upa,upw,upqt,... 1:nzi
   !  dry_a,moist_a,dry_w,moist_w, ... 1:nzi
-       ! Logical variable
-       logical, intent(in) :: edmf_condensation
-       ! Variable(s)
+
+  ! INPUTS
+       ! physics controls
+       logical, intent(in) :: do_condensation
        integer, intent(in) :: shcol,nz,nzi,nup
-       real(rtype), dimension(shcol,nz),  intent(in) :: exner
-       real(rtype), dimension(shcol,nz),  intent(in) :: zt_in,dz_zt_in !,p_in !,iex_in
-       real(rtype), dimension(shcol,nzi), intent(in) :: zi_in,p_in 
+       real(rtype), dimension(shcol,nz),  intent(in) :: zt_in,dz_zt_in
+       ! MKW TODO: remove zi_in as an argument, was only needed for linear_interp calls that were removed on 2020/09/01
+       real(rtype), dimension(shcol,nzi), intent(in) :: zi_in,p_in
        real(rtype), dimension(shcol,nz),  intent(in) :: u_in,v_in,thl_in,qt_in,qc_in,thv_in  ! all on thermodynamic/midpoint levels
 
        real(rtype), dimension(shcol), intent(in) :: ust, wthl, wqt
        real(rtype), dimension(shcol), intent(in) :: pblh
        real(rtype), value :: dt ! only needed for random number generator
 
-  ! outputs - updraft properties
+  ! OUTPUTS
+  ! updraft properties
        real(rtype),dimension(shcol,nzi), intent(out) :: &
-              mf_dry_a, mf_moist_a, mf_dry_w, mf_moist_w,                &
-              mf_dry_qt, mf_moist_qt, mf_dry_thl, mf_moist_thl,          &
-              mf_dry_u,  mf_moist_u,  mf_dry_v,   mf_moist_v,    mf_moist_qc
-  ! outputs - variables needed for diffusion solver
+              dry_a_out, moist_a_out, dry_w_out, moist_w_out,                &
+              dry_qt_out, moist_qt_out, dry_thl_out, moist_thl_out,          &
+              dry_u_out,  moist_u_out,  dry_v_out,   moist_v_out,    moist_qc_out
+  ! variables needed for diffusion solver
        real(rtype),dimension(shcol,nzi), intent(out) :: &
-              mf_ae,mf_aw,mf_awthv,mf_awthl,mf_awqt,mf_awql,mf_awqi,mf_awu,mf_awv
-  ! outputs - flux diagnostics
+              ae_out,aw_out,awthv_out,awthl_out,awqt_out,awql_out,awqi_out,awu_out,awv_out
+  ! flux diagnostics - currently diagnosed elsewhere
        !real(rtype),dimension(shcol,nzi), intent(out) :: thlflx_out, qtflx_out
 
   ! INTERNAL VARIABLES
   ! flipped variables (i.e. index 1 is at surface)
-       real(rtype), dimension(shcol,nz)  :: zt, dz_zt, iexner, p, exner_i
-       real(rtype), dimension(shcol,nzi) :: zi
+       real(rtype), dimension(shcol,nz)  :: zt, dz_zt
+       real(rtype), dimension(shcol,nzi) :: zi, p
        real(rtype), dimension(shcol,nz)  :: u,v,thl,qt,qc,thv
   ! flipped updraft properties (i.e. index 1 is at surface)
        real(rtype), dimension(shcol,nzi) :: dry_a, moist_a, dry_w, moist_w, &
@@ -168,27 +170,24 @@ contains
 
 
   ! Flip vertical coordinates and all input variables
-     do k=1,nzi
+     do k=1,nz
        ! thermodynamic grid variables
-       if (k<nzi) then
-         zt(:,k) = zt_in(:,nz-k+1)
-         dz_zt(:,k) = dz_zt_in(:,nz-k+1)
-         ! iexner(:,k) = iex_in(:,nz-k+1)
-         exner_i(:,k) = exner(:,nz-k+1)
-         !p(:,k) = p_in(:,nz-k+1)
+       zt(:,k) = zt_in(:,nz-k+1)
+       dz_zt(:,k) = dz_zt_in(:,nz-k+1)
 
-         u(:,k) = u_in(:,nz-k+1)
-         v(:,k) = v_in(:,nz-k+1)
-         thl(:,k) = thl_in(:,nz-k+1)
-         qt(:,k) = qt_in(:,nz-k+1)
-         qc(:,k) = qc_in(:,nz-k+1)
-         thv(:,k) = thv_in(:,nz-k+1)
-       endif
+       u(:,k) = u_in(:,nz-k+1)
+       v(:,k) = v_in(:,nz-k+1)
+       thl(:,k) = thl_in(:,nz-k+1)
+       qt(:,k) = qt_in(:,nz-k+1)
+       qc(:,k) = qc_in(:,nz-k+1)
+       thv(:,k) = thv_in(:,nz-k+1)
 
        ! momentum altitude grid
        zi(:,k) = zi_in(:,nzi-k+1)
-       p(:,k) = p_in(:,nzi-k+1)
+       p(:,k)  =  p_in(:,nzi-k+1)
      enddo
+     zi(:,nzi) = zi_in(:,1);
+     p(:,nzi)  =  p_in(:,1);
 
 
   ! INITIALIZE OUTPUT VARIABLES
@@ -208,7 +207,6 @@ contains
      moist_qc  = 0._rtype
   ! outputs - variables needed for solver
      aw        = 0._rtype
-     ! aws       = 0._rtype
      awthv     = 0._rtype
      awthl     = 0._rtype
      awqt      = 0._rtype
@@ -223,6 +221,7 @@ contains
 
   ! this is the environmental area - by default 1.
      ae = 1._rtype
+
 
   ! START MAIN COMPUTATION
   ! NOTE: SHOC does not invert the vertical coordinate, which by default is ordered from lowest to highest pressure
@@ -253,17 +252,22 @@ contains
          ! compute entrainment coefficient
          ! get dz/L0
          do i=1,nup
+           entf(1,i) =0._rtype
            do k=2,nz
              entf(k,i) = dzt(k) / L0
            enddo
          enddo
 
-         ! get Poisson P(dz/L0)
-         enti(:,:) = 4._rtype
-         !call Poisson( 2, nz, 1, nup, entf, enti)
+         ! get poisson P(dz/L0)
+         !if (debug) then
+         !   enti(:,:) = 4
+         !else
+         call Poisson( nz, nup, entf, enti, 69._rtype)
+         !endif
 
          ! entrainment: Ent=Ent0/dz*P(dz/L0)
          do i=1,nup
+           ent(1,i) = 0._rtype
            do k=2,nz
              ent(k,i) = real( enti(k,i))*ent0/dzt(k)
            enddo
@@ -293,10 +297,23 @@ contains
            upu(1, i) = u(j,1)
            upv(1, i) = v(j,1)
 
-           upqc(1,i)  = 0._rtype
            upqt(1,i)  = qt(j,1)  + 0.32_rtype * upw(1,i) * sigmaqt/sigmaw
            upthv(1,i) = thv(j,1) + 0.58_rtype * upw(1,i) * sigmath/sigmaw
            upthl(1,i) = upthv(1,i) / (1._rtype+eps*upqt(1,i))
+
+           if (do_condensation) then
+                iexh = (1.e5_rtype / p(j,1))**(rgas/cp)
+                call condensation_mf(upqt(1,i), upthl(1,i), p(j,1), iexh, &
+                                     thvn, qcn, thn, qln, qin)
+                upthv(1,i) = thvn
+                upqc(1,i) = qcn
+                upql(1,i) = qln
+                upqi(1,i) = qin
+           else
+                upqc(1,i) = 0._rtype
+                upthv(1,i) = upthl(1,i)*(1._rtype+eps*upqt(1,i))
+           end if
+
            upth(1,i)  = upthl(1,i)
            upqv(1,i)  = upqt(1,i)
 
@@ -308,24 +325,29 @@ contains
 
              entexp  = exp(-ent(k,i)*dzt(k))
              entexpu = exp(-ent(k,i)*dzt(k)/3._rtype)
+             if (entexp>1._rtype) then
+               print *,'entexp>1'
+             elseif (entexp<0._rtype) then
+               print *,'entexp<0'
+             endif
 
              qtn  = qt(j,k-1) *(1._rtype-entexp ) + upqt (k-1,i)*entexp
              thln = thl(j,k-1)*(1._rtype-entexp ) + upthl(k-1,i)*entexp
              un   = u(j,k-1)  *(1._rtype-entexpu) + upu  (k-1,i)*entexpu
              vn   = v(j,k-1)  *(1._rtype-entexpu) + upv  (k-1,i)*entexpu
              iexh = (1.e5_rtype / p(j,k))**(rgas/cp) ! MKW NOTE: why not just use SHOC exner??
-                          
+
              !Condensation within updrafts, input/output at full levels:
-             if (edmf_condensation) then
-               call condensation_mf( qtn, thln, p(j,k), iexh, &
-                                   thvn, qcn, thn, qln, qin)
+             if (do_condensation) then
+                call condensation_mf(qtn, thln, p(j,k), iexh, &
+                                    thvn, qcn, thn, qln, qin)
              else
-                thvn = thln*(1._rtype + eps*qtn)
+                qcn = 0._rtype
+                thvn = thln*(1._rtype+eps*qtn)
              end if
-             
-             b=ggr*(0.5_rtype*(thvn+upthv(k-1,i))/thv(j,k-1)-1._rtype)
-             
+
              ! To avoid singularities w equation has to be computed diferently if wp==0
+             b=ggr*(0.5_rtype*(thvn+upthv(k-1,i))/thv(j,k-1)-1._rtype)
              wp = wb*ent(k,i)
              if (wp==0.) then
                wn2 = upw(k-1,i)**2._rtype+2._rtype*wa*b*dzt(k)
@@ -421,9 +443,7 @@ contains
              aw  (j,k) = aw  (j,k) + upa(k,i)*upw(k,i)
              awu (j,k) = awu (j,k) + upa(k,i)*upw(k,i)*upu(k,i)
              awv (j,k) = awv (j,k) + upa(k,i)*upw(k,i)*upv(k,i)
-             !aws (k) = aws (k) + upa(k,i)*upw(k,i)*upth(k,i)*cpair
-             !aws (k) = aws (k) + upa(k,i)*upw(k,i)*ups(k,i)
-             awthv(j,k)= awthv(j,k)+ upa(k,i)*upw(k,i)*upthv(k,i) 
+             awthv(j,k)= awthv(j,k)+ upa(k,i)*upw(k,i)*upthv(k,i)
              awthl(j,k)= awthl(j,k)+ upa(k,i)*upw(k,i)*upthl(k,i) !*cpair/iexh
              awth(j,k) = awth(j,k) + upa(k,i)*upw(k,i)*upth(k,i) !*cpair/iexh
              awqt(j,k) = awqt(j,k) + upa(k,i)*upw(k,i)*upqt(k,i)
@@ -448,30 +468,32 @@ contains
 
      ! flip output variables so index 1 = model top (i.e. lowest pressure)
      do k=1,nzi
-       mf_dry_a(:,nzi-k+1) = dry_a(:,k)
-       mf_dry_w(:,nzi-k+1) = dry_w(:,k)
-       mf_dry_qt(:,nzi-k+1) = dry_qt(:,k)
-       mf_dry_thl(:,nzi-k+1) = dry_thl(:,k)
-       mf_dry_u(:,nzi-k+1) = dry_u(:,k)
-       mf_dry_v(:,nzi-k+1) = dry_v(:,k)
+       dry_w_out(:,nzi-k+1) = dry_w(:,k)
+       dry_qt_out(:,nzi-k+1) = dry_qt(:,k)
+       dry_thl_out(:,nzi-k+1) = dry_thl(:,k)
+       dry_u_out(:,nzi-k+1) = dry_u(:,k)
+       dry_v_out(:,nzi-k+1) = dry_v(:,k)
 
-       mf_moist_a(:,nzi-k+1) = moist_a(:,k)
-       mf_moist_w(:,nzi-k+1) = moist_w(:,k)
-       mf_moist_qt(:,nzi-k+1) = moist_qt(:,k)
-       mf_moist_thl(:,nzi-k+1) = moist_thl(:,k)
-       mf_moist_u(:,nzi-k+1) = moist_u(:,k)
-       mf_moist_v(:,nzi-k+1) = moist_v(:,k)
-       mf_moist_qc(:,nzi-k+1) = moist_qc(:,k)
+       moist_a_out(:,nzi-k+1) = moist_a(:,k)
+       moist_w_out(:,nzi-k+1) = moist_w(:,k)
+       moist_qt_out(:,nzi-k+1) = moist_qt(:,k)
+       moist_thl_out(:,nzi-k+1) = moist_thl(:,k)
+       moist_u_out(:,nzi-k+1) = moist_u(:,k)
+       moist_v_out(:,nzi-k+1) = moist_v(:,k)
+       moist_qc_out(:,nzi-k+1) = moist_qc(:,k)
 
-       mf_ae(:,nzi-k+1) = ae(:,k)
-       mf_aw(:,nzi-k+1) = aw(:,k)
-       mf_awthv(:,nzi-k+1) = awthv(:,k)
-       mf_awthl(:,nzi-k+1) = awthl(:,k)
-       mf_awqt(:,nzi-k+1) = awqt(:,k)
-       mf_awql(:,nzi-k+1) = awql(:,k)
-       mf_awqi(:,nzi-k+1) = awqi(:,k)
-       mf_awu(:,nzi-k+1) = awu(:,k)
-       mf_awv(:,nzi-k+1) = awv(:,k)
+       ae_out(:,nzi-k+1) = ae(:,k)
+       aw_out(:,nzi-k+1) = aw(:,k)
+       awthv_out(:,nzi-k+1) = awthv(:,k)
+       awthl_out(:,nzi-k+1) = awthl(:,k)
+       awqt_out(:,nzi-k+1) = awqt(:,k)
+       awql_out(:,nzi-k+1) = awql(:,k)
+       awqi_out(:,nzi-k+1) = awqi(:,k)
+       awu_out(:,nzi-k+1) = awu(:,k)
+       awv_out(:,nzi-k+1) = awv(:,k)
+
+       !thlflx_out(:,nzi-k+1) = thlflx(:,k)
+       !qtflx_out(:,nzi-k+1) = qtflx(:,k)
      end do
 
 
@@ -482,7 +504,7 @@ contains
   ! zero or one condensation for edmf: calculates thv and qc
   !
        use wv_saturation,      only : qsat
-       
+
        real(rtype),intent(in) :: qt,thl,p,iex
        real(rtype),intent(out):: thv,qc,th,ql,qi
 
@@ -574,7 +596,7 @@ contains
     ! Sum plume vertical flux of generic variable var (a_i*w_i*var_i) [units vary]
     real(rtype), intent(in) :: awvar(shcol,nlevi)
     ! Input variable on thermo/full grid [units vary]
-    real(rtype), intent(in) :: var(shcol,nlevi)
+    real(rtype), intent(in) :: var(shcol,nlevi) ! NOTE: var is interpolated to zi, so has dim nzi
 
   ! OUTPUT VARIABLE
     real(rtype), intent(out) :: varflx(shcol,nlevi)
@@ -583,7 +605,7 @@ contains
     integer :: i,k
 
     ! MKW TODO: SHOC has separate subroutines for lower (k=nlevi) and
-    !   upper (k=1) boundary conditions. Make these off later if SCREAM
+    !   upper (k=1) boundary conditions. Make these later if SCREAM
     !   folks want that. Should be very quick.
 
     ! diagnose MF fluxes
@@ -621,387 +643,608 @@ contains
 
   end subroutine compute_tmpi3
 
-!  subroutine Poisson(istart,iend,jstart,jend,mu,poi)
-!         ! Variable(s)
-!         integer, intent(in) :: istart,iend,jstart,jend
-!         real(rtype), dimension(istart:iend,jstart:jend),intent(in) :: mu
-!         integer, dimension(istart:iend,jstart:jend), intent(out) :: poi
-!
-!         integer :: i,j
-!
-!         ! do this only once
-!         ! call init_random_seed
-!
-!         do i=istart,iend
-!           do j=jstart,jend
-!             call   random_poisson(mu(i,j),.true.,poi(i,j))
-!           enddo
-!         enddo
-!
-!  end subroutine Poisson
-!
-!
-!  subroutine init_random_seed()
-!
-!         implicit none
-!         integer, allocatable :: seed(:)
-!         integer :: i, n, un, istat, dt(8), pid
-!         integer(itype) :: t
-!
-!         call random_seed(size = n)
-!         allocate(seed(n))
-!         ! First try if the OS provides a random number generator
-!         open(newunit=un, file="/dev/urandom", access="stream", &
-!         form="unformatted", action="read", status="old", iostat=istat)
-!         if (istat == 0) then
-!           read(un) seed
-!           close(un)
-!         else
-!         ! Fallback to XOR:ing the current time and pid. The PID is
-!         ! useful in case one launches multiple instances of the same
-!         ! program in parallel.
-!           call system_clock(t)
-!           if (t == 0) then
-!             call date_and_time(values=dt)
-!             t = (dt(1) - 1970) * 365_itype * 24 * 60 * 60 * 1000 &
-!               + dt(2) * 31_itype * 24 * 60 * 60 * 1000 &
-!               + dt(3) * 24_itype * 60 * 60 * 1000 &
-!               + dt(5) * 60 * 60 * 1000 &
-!               + dt(6) * 60 * 1000 + dt(7) * 1000 &
-!               + dt(8)
-!           end if
-!           !pid = getpid()
-!           ! for distributed memory jobs we need to fix this
-!           pid = 1
-!           t = ieor(t, int(pid, kind(t)))
-!           do i=1,n
-!             seed(i) = lcg(t)
-!           end do
-!         end if
-!         call random_seed(put=seed)
-!
-!         contains
-!         ! This simple PRNG might not be good enough for real work, but is
-!         ! sufficient for seeding a better PRNG.
-!         function lcg(s)
-!           integer :: lcg
-!           integer(itype) :: s
-!           if (s == 0) then
-!             s = 104729
-!           else
-!             s = mod(s, 4294967296_itype)
-!           end if
-!           s = mod(s * 279470273_itype, 4294967291_itype)
-!           lcg = int(mod(s, int(huge(0), itype)), kind(0))
-!         end function lcg
-!
-!  end subroutine init_random_seed
-!
-!
-!  subroutine random_Poisson(mu,first,ival)
-!  !**********************************************************************
-!  !     Translated to Fortran 90 by Alan Miller from:
-!  !                           RANLIB
-!  !
-!  !     Library of Fortran Routines for Random Number Generation
-!  !
-!  !                    Compiled and Written by:
-!  !
-!  !                         Barry W. Brown
-!  !                          James Lovato
-!  !
-!  !             Department of Biomathematics, Box 237
-!  !             The University of Texas, M.D. Anderson Cancer Center
-!  !             1515 Holcombe Boulevard
-!  !             Houston, TX      77030
-!  !
-!  ! This work was supported by grant CA-16672 from the National Cancer Institute.
-!
-!  !                    GENerate POIsson random deviate
-!  !                            Function
-!  ! Generates a single random deviate from a Poisson distribution with mean mu.
-!  !                            Arguments
-!  !     mu --> The mean of the Poisson distribution from which
-!  !            a random deviate is to be generated.
-!  !                              REAL mu
-!  !                              Method
-!  !     For details see:
-!  !               Ahrens, J.H. and Dieter, U.
-!  !               Computer Generation of Poisson Deviates
-!  !               From Modified Normal Distributions.
-!  !               ACM Trans. Math. Software, 8, 2
-!  !               (June 1982),163-179
-!  !     TABLES: COEFFICIENTS A0-A7 FOR STEP F. FACTORIALS FACT
-!  !     COEFFICIENTS A(K) - FOR PX = FK*V*V*SUM(A(K)*V**K)-DEL
-!  !     SEPARATION OF CASES A AND B
-!
-!  !     .. Scalar Arguments ..
-!  	REAL(rtype), INTENT(IN)    :: mu
-!  	LOGICAL, INTENT(IN) :: first
-!    INTEGER             :: ival
-!  !     ..
-!  !     .. Local Scalars ..
-!  	REAL(rtype)          :: b1, b2, c, c0, c1, c2, c3, del, difmuk, e, fk, fx, fy, g,  &
-!                      omega, px, py, t, u, v, x, xx
-!  	REAL(rtype), SAVE    :: s, d, p, q, p0
-!          INTEGER       :: j, k, kflag
-!  	LOGICAL, SAVE :: full_init
-!          INTEGER, SAVE :: l, m
-!  !     ..
-!  !     .. Local Arrays ..
-!  	REAL(rtype), SAVE    :: pp(35)
-!  !     ..
-!  !     .. Data statements ..
-!  	REAL(rtype), PARAMETER :: a0 = -.5_rtype, a1 = .3333333_rtype, a2 = -.2500068_rtype, a3 = .2000118_rtype,  &
-!                  a4 = -.1661269_rtype, a5 = .1421878_rtype, a6 = -.1384794_rtype,   &
-!                   a7 = .1250060_rtype
-!
-!  	REAL(rtype), PARAMETER :: fact(10) = (/ 1._rtype, 1._rtype, 2._rtype, 6._rtype, 24._rtype, 120._rtype, 720._rtype, 5040._rtype,  &
-!              40320._rtype, 362880._rtype /)
-!
-!  !     ..
-!  !     .. Executable Statements ..
-!     IF (mu > 10.0_rtype) THEN
-!  !     C A S E  A. (RECALCULATION OF S, D, L IF MU HAS CHANGED)
-!
-!    IF (first) THEN
-!  s = SQRT(mu)
-!  d = 6.0_rtype*mu*mu
-!
-!  !             THE POISSON PROBABILITIES PK EXCEED THE DISCRETE NORMAL
-!  !             PROBABILITIES FK WHENEVER K >= M(MU). L=IFIX(MU-1.1484)
-!  !             IS AN UPPER BOUND TO M(MU) FOR ALL MU >= 10 .
-!
-!  l = mu - 1.1484
-!  full_init = .false.
-!    END IF
-!
-!
-!  !     STEP N. NORMAL SAMPLE - random_normal() FOR STANDARD NORMAL DEVIATE
-!
-!  	  g = mu + s*random_normal()
-!  	  IF (g > 0.0_rtype) THEN
-!  		ival = g
-!
-!  	!     STEP I. IMMEDIATE ACCEPTANCE IF ival IS LARGE ENOUGH
-!
-!  		IF (ival>=l) RETURN
-!
-!  	!     STEP S. SQUEEZE ACCEPTANCE - SAMPLE U
-!
-!  		fk = ival
-!  		difmuk = mu - fk
-!  		CALL RANDOM_NUMBER(u)
-!  		IF (d*u >= difmuk*difmuk*difmuk) RETURN
-!  	  END IF
-!
-!  	!     STEP P. PREPARATIONS FOR STEPS Q AND H.
-!  	!             (RECALCULATIONS OF PARAMETERS IF NECESSARY)
-!  	!             .3989423=(2*PI)**(-.5)  .416667E-1=1./24.  .1428571=1./7.
-!  	!             THE QUANTITIES B1, B2, C3, C2, C1, C0 ARE FOR THE HERMITE
-!  	!             APPROXIMATIONS TO THE DISCRETE NORMAL PROBABILITIES FK.
-!  	!             C=.1069/MU GUARANTEES MAJORIZATION BY THE 'HAT'-FUNCTION.
-!
-!  	  IF (.NOT. full_init) THEN
-!  		omega = .3989423_rtype/s
-!  		b1 = .4166667E-1_rtype/mu
-!  		b2 = .3_rtype*b1*b1
-!  		c3 = .1428571_rtype*b1*b2
-!  		c2 = b2 - 15._rtype*c3
-!  		c1 = b1 - 6._rtype*b2 + 45._rtype*c3
-!  		c0 = 1._rtype - b1 + 3._rtype*b2 - 15._rtype*c3
-!  		c = .1069_rtype/mu
-!  		full_init = .true.
-!  	  END IF
-!
-!  	  IF (g < 0.0_rtype) GO TO 50
-!
-!  	!             'SUBROUTINE' F IS CALLED (KFLAG=0 FOR CORRECT RETURN)
-!
-!  	  kflag = 0
-!  	  GO TO 70
-!
-!  	!     STEP Q. QUOTIENT ACCEPTANCE (RARE CASE)
-!
-!  	  40 IF (fy-u*fy <= py*EXP(px-fx)) RETURN
-!
-!  	!     STEP E. EXPONENTIAL SAMPLE - random_exponential() FOR STANDARD EXPONENTIAL
-!  	!             DEVIATE E AND SAMPLE T FROM THE LAPLACE 'HAT'
-!  	!             (IF T <= -.6744 THEN PK < FK FOR ALL MU >= 10.)
-!
-!  	  50 e = random_exponential()
-!  	  CALL RANDOM_NUMBER(u)
-!  	  u = u + u - 1
-!  	  t = 1.8_rtype + SIGN(e, u)
-!  	  IF (t <= (-.6744_rtype)) GO TO 50
-!  	  ival = mu + s*t
-!  	  fk = ival
-!  	  difmuk = mu - fk
-!
-!  	!             'SUBROUTINE' F IS CALLED (KFLAG=1 FOR CORRECT RETURN)
-!
-!  	  kflag = 1
-!  	  GO TO 70
-!
-!  	!     STEP H. HAT ACCEPTANCE (E IS REPEATED ON REJECTION)
-!
-!  	  60 IF (c*ABS(u) > py*EXP(px+e) - fy*EXP(fx+e)) GO TO 50
-!  	  RETURN
-!
-!  	!     STEP F. 'SUBROUTINE' F. CALCULATION OF PX, PY, FX, FY.
-!  	!             CASE ival < 10 USES FACTORIALS FROM TABLE FACT
-!
-!  	  70 IF (ival>=10) GO TO 80
-!  	  px = -mu
-!  	  py = mu**ival/fact(ival+1)
-!  	  GO TO 110
-!
-!  	!             CASE ival >= 10 USES POLYNOMIAL APPROXIMATION
-!  	!             A0-A7 FOR ACCURACY WHEN ADVISABLE
-!  	!             .8333333E-1=1./12.  .3989423=(2*PI)**(-.5)
-!
-!  	  80 del = .8333333E-1_rtype/fk
-!  	  del = del - 4.8_rtype*del*del*del
-!  	  v = difmuk/fk
-!  	  IF (ABS(v)>0.25_rtype) THEN
-!  		px = fk*LOG(1._rtype + v) - difmuk - del
-!  	  ELSE
-!  		px = fk*v*v* (((((((a7*v+a6)*v+a5)*v+a4)*v+a3)*v+a2)*v+a1)*v+a0) - del
-!  	  END IF
-!  	  py = .3989423_rtype/SQRT(fk)
-!  	  110 x = (0.5_rtype - difmuk)/s
-!  	  xx = x*x
-!  	  fx = -0.5_rtype*xx
-!  	  fy = omega* (((c3*xx + c2)*xx + c1)*xx + c0)
-!  	  IF (kflag <= 0) GO TO 40
-!  	  GO TO 60
-!
-!  	!---------------------------------------------------------------------------
-!  	!     C A S E  B.    mu < 10
-!  	!     START NEW TABLE AND CALCULATE P0 IF NECESSARY
-!
-!  	ELSE
-!  	  IF (first) THEN
-!  		m = MAX(1, INT(mu))
-!  		l = 0
-!  		p = EXP(-mu)
-!  		q = p
-!  		p0 = p
-!  	  END IF
-!
-!  	!     STEP U. UNIFORM SAMPLE FOR INVERSION METHOD
-!
-!  	  DO
-!  		CALL RANDOM_NUMBER(u)
-!  		ival = 0
-!  		IF (u <= p0) RETURN
-!
-!  	!     STEP T. TABLE COMPARISON UNTIL THE END PP(L) OF THE
-!  	!             PP-TABLE OF CUMULATIVE POISSON PROBABILITIES
-!  	!             (0.458=PP(9) FOR MU=10)
-!
-!  		IF (l == 0) GO TO 150
-!  		j = 1
-!  		IF (u > 0.458) j = MIN(l, m)
-!  		DO k = j, l
-!  		  IF (u <= pp(k)) GO TO 180
-!  		END DO
-!  		IF (l == 35) CYCLE
-!
-!  	!     STEP C. CREATION OF NEW POISSON PROBABILITIES P
-!  	!             AND THEIR CUMULATIVES Q=PP(K)
-!
-!  		150 l = l + 1
-!  		DO k = l, 35
-!  		  p = p*mu / k
-!  		  q = q + p
-!  		  pp(k) = q
-!  		  IF (u <= q) GO TO 170
-!  		END DO
-!  		l = 35
-!  	  END DO
-!
-!  	  170 l = k
-!  	  180 ival = k
-!  	  RETURN
-!  	END IF
-!
-!  	RETURN
-!  	END subroutine random_Poisson
-!
-!
-!
-!  	FUNCTION random_normal() RESULT(fn_val)
-!
-!  	! Adapted from the following Fortran 77 code
-!  	!      ALGORITHM 712, COLLECTED ALGORITHMS FROM ACM.
-!  	!      THIS WORK PUBLISHED IN TRANSACTIONS ON MATHEMATICAL SOFTWARE,
-!  	!      VOL. 18, NO. 4, DECEMBER, 1992, PP. 434-435.
-!
-!  	!  The function random_normal() returns a normally distributed pseudo-random
-!  	!  number with zero mean and unit variance.
-!
-!  	!  The algorithm uses the ratio of uniforms method of A.J. Kinderman
-!  	!  and J.F. Monahan augmented with quadratic bounding curves.
-!          REAL(rtype) :: fn_val
-!
-!  	!     Local variables
-!  	REAL(rtype)     :: s = 0.449871_rtype, t = -0.386595_rtype, a = 0.19600_rtype, b = 0.25472_rtype,           &
-!  				r1 = 0.27597_rtype, r2 = 0.27846_rtype, u, v, x, y, q
-!
-!  	!     Generate P = (u,v) uniform in rectangle enclosing acceptance region
-!
-!  	DO
-!  	  CALL RANDOM_NUMBER(u)
-!  	  CALL RANDOM_NUMBER(v)
-!  	  v = 1.7156_rtype * (v - 0.5_rtype )
-!
-!  	!     Evaluate the quadratic form
-!  	  x = u - s
-!  	  y = ABS(v) - t
-!  	  q = x**2._rtype + y*(a*y - b*x)
-!
-!  	!     Accept P if inside inner ellipse
-!  	  IF (q < r1) EXIT
-!  	!     Reject P if outside outer ellipse
-!  	  IF (q > r2) CYCLE
-!  	!     Reject P if outside acceptance region
-!  	  IF (v**2._rtype < -4.0_rtype*LOG(u)*u**2) EXIT
-!  	END DO
-!
-!  	!     Return ratio of P's coordinates as the normal deviate
-!  	fn_val = v/u
-!  	RETURN
-!
-!  	END FUNCTION random_normal
-!
-!
-!
-!
-!
-!  	FUNCTION random_exponential() RESULT(fn_val)
-!
-!  	! Adapted from Fortran 77 code from the book:
-!  	!     Dagpunar, J. 'Principles of random variate generation'
-!  	!     Clarendon Press, Oxford, 1988.   ISBN 0-19-852202-9
-!
-!  	! FUNCTION GENERATES A RANDOM VARIATE IN [0,INFINITY) FROM
-!  	! A NEGATIVE EXPONENTIAL DlSTRIBUTION WlTH DENSITY PROPORTIONAL
-!  	! TO EXP(-random_exponential), USING INVERSION.
-!          REAL(rtype)  :: fn_val
-!
-!  	!     Local variable
-!  	REAL(rtype)  :: r
-!
-!  	DO
-!  	  CALL RANDOM_NUMBER(r)
-!  	  IF (r > 0._rtype) EXIT
-!  	END DO
-!
-!  	fn_val = -LOG(r)
-!  	RETURN
-!
-!  	END FUNCTION random_exponential
+  subroutine poisson_arh(nz,nup,lambda,poi,state)
+
+         integer, intent(in)                     :: nz,nup
+         real(rtype), intent(in)                    :: state
+         real(rtype), dimension(nz,nup), intent(in) :: lambda
+         integer, dimension(nz,nup), intent(out) :: poi
+         integer                                 :: i,j
+
+         call set_seed_from_state(state)
+
+         do i=1,nz
+           do j=1,nup
+             call knuth(lambda(i,j),poi(i,j))
+           enddo
+         enddo
+
+    end subroutine poisson_arh
+
+    subroutine set_seed_from_state(state)
+    !**********************************************************************
+    ! Set a unique (but reproduceble) seed using state
+    ! By Adam Herrington
+    !**********************************************************************
+
+         real(rtype),intent(in)  :: state
+         integer, allocatable :: seed(:)
+         integer               :: i,n,tmpseed
+
+         call random_seed(size = n)
+
+         if (allocated(seed)) deallocate(seed)
+         allocate(seed(n))
+
+         tmpseed = int((state - int(state)) * 1000000000._rtype)
+         do i=1,n
+           seed(i) = tmpseed
+         end do
+
+         call random_seed(put=seed)
+         deallocate(seed)
+
+    end subroutine set_seed_from_state
+
+     subroutine knuth(lambda,kout)
+     !**********************************************************************
+     ! Discrete random poisson from Knuth
+     ! The Art of Computer Programming, v2, 137-138
+     ! By Adam Herrington
+     !**********************************************************************
+    
+          real(rtype), intent(in) :: lambda
+          integer, intent(out) :: kout
+    
+          !Local variables
+          real(rtype) :: puni, tmpuni, explam
+          integer  :: k
+    
+          k = 0
+          explam = exp(-1._rtype*lambda)
+          puni = 1._rtype
+          do while (puni.gt.explam)
+            k = k + 1
+            call random_number(tmpuni)
+            puni = puni*tmpuni
+          end do
+          kout = k - 1
+
+    end subroutine knuth
+
+  ! subroutine Poisson(istart,iend,jstart,jend,mu,poi)
+  !        ! Variable(s)
+  !        integer, intent(in) :: istart,iend,jstart,jend
+  !        real(rtype), dimension(istart:iend,jstart:jend),intent(in) :: mu
+  !        integer, dimension(istart:iend,jstart:jend), intent(out) :: poi
+  !
+  !        integer :: i,j
+  !
+  !        ! do this only once
+  !        ! call init_random_seed
+  !
+  !        do i=istart,iend
+  !          do j=jstart,jend
+  !            call   random_poisson(mu(i,j),.true.,poi(i,j))
+  !          enddo
+  !        enddo
+  !
+  ! end subroutine Poisson
+  !
+  !
+  ! subroutine init_random_seed()
+  !
+  !        implicit none
+  !        integer, allocatable :: seed(:)
+  !        integer :: i, n, un, istat, dt(8), pid
+  !        integer(itype) :: t
+  !
+  !        call random_seed(size = n)
+  !        allocate(seed(n))
+  !        ! First try if the OS provides a random number generator
+  !        open(newunit=un, file="/dev/urandom", access="stream", &
+  !        form="unformatted", action="read", status="old", iostat=istat)
+  !        if (istat == 0) then
+  !          read(un) seed
+  !          close(un)
+  !        else
+  !        ! Fallback to XOR:ing the current time and pid. The PID is
+  !        ! useful in case one launches multiple instances of the same
+  !        ! program in parallel.
+  !          call system_clock(t)
+  !          if (t == 0) then
+  !            call date_and_time(values=dt)
+  !            t = (dt(1) - 1970) * 365_itype * 24 * 60 * 60 * 1000 &
+  !              + dt(2) * 31_itype * 24 * 60 * 60 * 1000 &
+  !              + dt(3) * 24_itype * 60 * 60 * 1000 &
+  !              + dt(5) * 60 * 60 * 1000 &
+  !              + dt(6) * 60 * 1000 + dt(7) * 1000 &
+  !              + dt(8)
+  !          end if
+  !          !pid = getpid()
+  !          ! for distributed memory jobs we need to fix this
+  !          pid = 1
+  !          t = ieor(t, int(pid, kind(t)))
+  !          do i=1,n
+  !            seed(i) = lcg(t)
+  !          end do
+  !        end if
+  !        call random_seed(put=seed)
+  !
+  !        contains
+  !        ! This simple PRNG might not be good enough for real work, but is
+  !        ! sufficient for seeding a better PRNG.
+  !        function lcg(s)
+  !          integer :: lcg
+  !          integer(itype) :: s
+  !          if (s == 0) then
+  !            s = 104729
+  !          else
+  !            s = mod(s, 4294967296_itype)
+  !          end if
+  !          s = mod(s * 279470273_itype, 4294967291_itype)
+  !          lcg = int(mod(s, int(huge(0), itype)), kind(0))
+  !        end function lcg
+  !
+  ! end subroutine init_random_seed
+  !
+  !
+  ! subroutine random_Poisson(mu,first,ival)
+  ! !**********************************************************************
+  ! !     Translated to Fortran 90 by Alan Miller from:
+  ! !                           RANLIB
+  ! !
+  ! !     Library of Fortran Routines for Random Number Generation
+  ! !
+  ! !                    Compiled and Written by:
+  ! !
+  ! !                         Barry W. Brown
+  ! !                          James Lovato
+  ! !
+  ! !             Department of Biomathematics, Box 237
+  ! !             The University of Texas, M.D. Anderson Cancer Center
+  ! !             1515 Holcombe Boulevard
+  ! !             Houston, TX      77030
+  ! !
+  ! ! This work was supported by grant CA-16672 from the National Cancer Institute.
+  !
+  ! !                    GENerate POIsson random deviate
+  ! !                            Function
+  ! ! Generates a single random deviate from a Poisson distribution with mean mu.
+  ! !                            Arguments
+  ! !     mu --> The mean of the Poisson distribution from which
+  ! !            a random deviate is to be generated.
+  ! !                              REAL mu
+  ! !                              Method
+  ! !     For details see:
+  ! !               Ahrens, J.H. and Dieter, U.
+  ! !               Computer Generation of Poisson Deviates
+  ! !               From Modified Normal Distributions.
+  ! !               ACM Trans. Math. Software, 8, 2
+  ! !               (June 1982),163-179
+  ! !     TABLES: COEFFICIENTS A0-A7 FOR STEP F. FACTORIALS FACT
+  ! !     COEFFICIENTS A(K) - FOR PX = FK*V*V*SUM(A(K)*V**K)-DEL
+  ! !     SEPARATION OF CASES A AND B
+  !
+  ! !     .. Scalar Arguments ..
+  ! 	REAL(rtype), INTENT(IN)    :: mu
+  ! 	LOGICAL, INTENT(IN) :: first
+  !   INTEGER             :: ival
+  ! !     ..
+  ! !     .. Local Scalars ..
+  ! 	REAL(rtype)          :: b1, b2, c, c0, c1, c2, c3, del, difmuk, e, fk, fx, fy, g,  &
+  !                     omega, px, py, t, u, v, x, xx
+  ! 	REAL(rtype), SAVE    :: s, d, p, q, p0
+  !         INTEGER       :: j, k, kflag
+  ! 	LOGICAL, SAVE :: full_init
+  !         INTEGER, SAVE :: l, m
+  ! !     ..
+  ! !     .. Local Arrays ..
+  ! 	REAL(rtype), SAVE    :: pp(35)
+  ! !     ..
+  ! !     .. Data statements ..
+  ! 	REAL(rtype), PARAMETER :: a0 = -.5_rtype, a1 = .3333333_rtype, a2 = -.2500068_rtype, a3 = .2000118_rtype,  &
+  !                 a4 = -.1661269_rtype, a5 = .1421878_rtype, a6 = -.1384794_rtype,   &
+  !                  a7 = .1250060_rtype
+  !
+  ! 	REAL(rtype), PARAMETER :: fact(10) = (/ 1._rtype, 1._rtype, 2._rtype, 6._rtype, 24._rtype, 120._rtype, 720._rtype, 5040._rtype,  &
+  !             40320._rtype, 362880._rtype /)
+  !
+  ! !     ..
+  ! !     .. Executable Statements ..
+  !    IF (mu > 10.0_rtype) THEN
+  ! !     C A S E  A. (RECALCULATION OF S, D, L IF MU HAS CHANGED)
+  !
+  !   IF (first) THEN
+  ! s = SQRT(mu)
+  ! d = 6.0_rtype*mu*mu
+  !
+  ! !             THE POISSON PROBABILITIES PK EXCEED THE DISCRETE NORMAL
+  ! !             PROBABILITIES FK WHENEVER K >= M(MU). L=IFIX(MU-1.1484)
+  ! !             IS AN UPPER BOUND TO M(MU) FOR ALL MU >= 10 .
+  !
+  ! l = mu - 1.1484
+  ! full_init = .false.
+  !   END IF
+  !
+  !
+  ! !     STEP N. NORMAL SAMPLE - random_normal() FOR STANDARD NORMAL DEVIATE
+  !
+  ! 	  g = mu + s*random_normal()
+  ! 	  IF (g > 0.0_rtype) THEN
+  ! 		ival = g
+  !
+  ! 	!     STEP I. IMMEDIATE ACCEPTANCE IF ival IS LARGE ENOUGH
+  !
+  ! 		IF (ival>=l) RETURN
+  !
+  ! 	!     STEP S. SQUEEZE ACCEPTANCE - SAMPLE U
+  !
+  ! 		fk = ival
+  ! 		difmuk = mu - fk
+  ! 		CALL RANDOM_NUMBER(u)
+  ! 		IF (d*u >= difmuk*difmuk*difmuk) RETURN
+  ! 	  END IF
+  !
+  ! 	!     STEP P. PREPARATIONS FOR STEPS Q AND H.
+  ! 	!             (RECALCULATIONS OF PARAMETERS IF NECESSARY)
+  ! 	!             .3989423=(2*PI)**(-.5)  .416667E-1=1./24.  .1428571=1./7.
+  ! 	!             THE QUANTITIES B1, B2, C3, C2, C1, C0 ARE FOR THE HERMITE
+  ! 	!             APPROXIMATIONS TO THE DISCRETE NORMAL PROBABILITIES FK.
+  ! 	!             C=.1069/MU GUARANTEES MAJORIZATION BY THE 'HAT'-FUNCTION.
+  !
+  ! 	  IF (.NOT. full_init) THEN
+  ! 		omega = .3989423_rtype/s
+  ! 		b1 = .4166667E-1_rtype/mu
+  ! 		b2 = .3_rtype*b1*b1
+  ! 		c3 = .1428571_rtype*b1*b2
+  ! 		c2 = b2 - 15._rtype*c3
+  ! 		c1 = b1 - 6._rtype*b2 + 45._rtype*c3
+  ! 		c0 = 1._rtype - b1 + 3._rtype*b2 - 15._rtype*c3
+  ! 		c = .1069_rtype/mu
+  ! 		full_init = .true.
+  ! 	  END IF
+  !
+  ! 	  IF (g < 0.0_rtype) GO TO 50
+  !
+  ! 	!             'SUBROUTINE' F IS CALLED (KFLAG=0 FOR CORRECT RETURN)
+  !
+  ! 	  kflag = 0
+  ! 	  GO TO 70
+  !
+  ! 	!     STEP Q. QUOTIENT ACCEPTANCE (RARE CASE)
+  !
+  ! 	  40 IF (fy-u*fy <= py*EXP(px-fx)) RETURN
+  !
+  ! 	!     STEP E. EXPONENTIAL SAMPLE - random_exponential() FOR STANDARD EXPONENTIAL
+  ! 	!             DEVIATE E AND SAMPLE T FROM THE LAPLACE 'HAT'
+  ! 	!             (IF T <= -.6744 THEN PK < FK FOR ALL MU >= 10.)
+  !
+  ! 	  50 e = random_exponential()
+  ! 	  CALL RANDOM_NUMBER(u)
+  ! 	  u = u + u - 1
+  ! 	  t = 1.8_rtype + SIGN(e, u)
+  ! 	  IF (t <= (-.6744_rtype)) GO TO 50
+  ! 	  ival = mu + s*t
+  ! 	  fk = ival
+  ! 	  difmuk = mu - fk
+  !
+  ! 	!             'SUBROUTINE' F IS CALLED (KFLAG=1 FOR CORRECT RETURN)
+  !
+  ! 	  kflag = 1
+  ! 	  GO TO 70
+  !
+  ! 	!     STEP H. HAT ACCEPTANCE (E IS REPEATED ON REJECTION)
+  !
+  ! 	  60 IF (c*ABS(u) > py*EXP(px+e) - fy*EXP(fx+e)) GO TO 50
+  ! 	  RETURN
+  !
+  ! 	!     STEP F. 'SUBROUTINE' F. CALCULATION OF PX, PY, FX, FY.
+  ! 	!             CASE ival < 10 USES FACTORIALS FROM TABLE FACT
+  !
+  ! 	  70 IF (ival>=10) GO TO 80
+  ! 	  px = -mu
+  ! 	  py = mu**ival/fact(ival+1)
+  ! 	  GO TO 110
+  !
+  ! 	!             CASE ival >= 10 USES POLYNOMIAL APPROXIMATION
+  ! 	!             A0-A7 FOR ACCURACY WHEN ADVISABLE
+  ! 	!             .8333333E-1=1./12.  .3989423=(2*PI)**(-.5)
+  !
+  ! 	  80 del = .8333333E-1_rtype/fk
+  ! 	  del = del - 4.8_rtype*del*del*del
+  ! 	  v = difmuk/fk
+  ! 	  IF (ABS(v)>0.25_rtype) THEN
+  ! 		px = fk*LOG(1._rtype + v) - difmuk - del
+  ! 	  ELSE
+  ! 		px = fk*v*v* (((((((a7*v+a6)*v+a5)*v+a4)*v+a3)*v+a2)*v+a1)*v+a0) - del
+  ! 	  END IF
+  ! 	  py = .3989423_rtype/SQRT(fk)
+  ! 	  110 x = (0.5_rtype - difmuk)/s
+  ! 	  xx = x*x
+  ! 	  fx = -0.5_rtype*xx
+  ! 	  fy = omega* (((c3*xx + c2)*xx + c1)*xx + c0)
+  ! 	  IF (kflag <= 0) GO TO 40
+  ! 	  GO TO 60
+  !
+  ! 	!---------------------------------------------------------------------------
+  ! 	!     C A S E  B.    mu < 10
+  ! 	!     START NEW TABLE AND CALCULATE P0 IF NECESSARY
+  !
+  ! 	ELSE
+  ! 	  IF (first) THEN
+  ! 		m = MAX(1, INT(mu))
+  ! 		l = 0
+  ! 		p = EXP(-mu)
+  ! 		q = p
+  ! 		p0 = p
+  ! 	  END IF
+  !
+  ! 	!     STEP U. UNIFORM SAMPLE FOR INVERSION METHOD
+  !
+  ! 	  DO
+  ! 		CALL RANDOM_NUMBER(u)
+  ! 		ival = 0
+  ! 		IF (u <= p0) RETURN
+  !
+  ! 	!     STEP T. TABLE COMPARISON UNTIL THE END PP(L) OF THE
+  ! 	!             PP-TABLE OF CUMULATIVE POISSON PROBABILITIES
+  ! 	!             (0.458=PP(9) FOR MU=10)
+  !
+  ! 		IF (l == 0) GO TO 150
+  ! 		j = 1
+  ! 		IF (u > 0.458) j = MIN(l, m)
+  ! 		DO k = j, l
+  ! 		  IF (u <= pp(k)) GO TO 180
+  ! 		END DO
+  ! 		IF (l == 35) CYCLE
+  !
+  ! 	!     STEP C. CREATION OF NEW POISSON PROBABILITIES P
+  ! 	!             AND THEIR CUMULATIVES Q=PP(K)
+  !
+  ! 		150 l = l + 1
+  ! 		DO k = l, 35
+  ! 		  p = p*mu / k
+  ! 		  q = q + p
+  ! 		  pp(k) = q
+  ! 		  IF (u <= q) GO TO 170
+  ! 		END DO
+  ! 		l = 35
+  ! 	  END DO
+  !
+  ! 	  170 l = k
+  ! 	  180 ival = k
+  ! 	  RETURN
+  ! 	END IF
+  !
+  ! 	RETURN
+  ! 	END subroutine random_Poisson
+  !
+  !
+  !
+  ! 	FUNCTION random_normal() RESULT(fn_val)
+  !
+  ! 	! Adapted from the following Fortran 77 code
+  ! 	!      ALGORITHM 712, COLLECTED ALGORITHMS FROM ACM.
+  ! 	!      THIS WORK PUBLISHED IN TRANSACTIONS ON MATHEMATICAL SOFTWARE,
+  ! 	!      VOL. 18, NO. 4, DECEMBER, 1992, PP. 434-435.
+  !
+  ! 	!  The function random_normal() returns a normally distributed pseudo-random
+  ! 	!  number with zero mean and unit variance.
+  !
+  ! 	!  The algorithm uses the ratio of uniforms method of A.J. Kinderman
+  ! 	!  and J.F. Monahan augmented with quadratic bounding curves.
+  !         REAL(rtype) :: fn_val
+  !
+  ! 	!     Local variables
+  ! 	REAL(rtype)     :: s = 0.449871_rtype, t = -0.386595_rtype, a = 0.19600_rtype, b = 0.25472_rtype,           &
+  ! 				r1 = 0.27597_rtype, r2 = 0.27846_rtype, u, v, x, y, q
+  !
+  ! 	!     Generate P = (u,v) uniform in rectangle enclosing acceptance region
+  !
+  ! 	DO
+  ! 	  CALL RANDOM_NUMBER(u)
+  ! 	  CALL RANDOM_NUMBER(v)
+  ! 	  v = 1.7156_rtype * (v - 0.5_rtype )
+  !
+  ! 	!     Evaluate the quadratic form
+  ! 	  x = u - s
+  ! 	  y = ABS(v) - t
+  ! 	  q = x**2._rtype + y*(a*y - b*x)
+  !
+  ! 	!     Accept P if inside inner ellipse
+  ! 	  IF (q < r1) EXIT
+  ! 	!     Reject P if outside outer ellipse
+  ! 	  IF (q > r2) CYCLE
+  ! 	!     Reject P if outside acceptance region
+  ! 	  IF (v**2._rtype < -4.0_rtype*LOG(u)*u**2) EXIT
+  ! 	END DO
+  !
+  ! 	!     Return ratio of P's coordinates as the normal deviate
+  ! 	fn_val = v/u
+  ! 	RETURN
+  !
+  ! 	END FUNCTION random_normal
+  !
+  !
+  !
+  !
+  !
+  ! 	FUNCTION random_exponential() RESULT(fn_val)
+  !
+  ! 	! Adapted from Fortran 77 code from the book:
+  ! 	!     Dagpunar, J. 'Principles of random variate generation'
+  ! 	!     Clarendon Press, Oxford, 1988.   ISBN 0-19-852202-9
+  !
+  ! 	! FUNCTION GENERATES A RANDOM VARIATE IN [0,INFINITY) FROM
+  ! 	! A NEGATIVE EXPONENTIAL DlSTRIBUTION WlTH DENSITY PROPORTIONAL
+  ! 	! TO EXP(-random_exponential), USING INVERSION.
+  !         REAL(rtype)  :: fn_val
+  !
+  ! 	!     Local variable
+  ! 	REAL(rtype)  :: r
+  !
+  ! 	DO
+  ! 	  CALL RANDOM_NUMBER(r)
+  ! 	  IF (r > 0._rtype) EXIT
+  ! 	END DO
+  !
+  ! 	fn_val = -LOG(r)
+  ! 	RETURN
+  !
+  ! 	END FUNCTION random_exponential
+
+    subroutine Poisson(nz,nup,mu,POI,seed)
+      use time_manager, only: is_first_step
+      implicit none
+      integer, intent(in) :: nz,nup
+      real(rtype),dimension(nz,nup),intent(in) :: MU
+      integer, dimension(nz,nup), intent(out) :: POI
+      real(rtype), intent(in) :: seed
+      integer :: seed_len,i,j
+      integer,allocatable:: the_seed(:)
+
+      !Begin code
+      !if (seed .le. 0) then seed=max(-seed,1)
+
+      if (is_first_step()) then
+        call random_seed(SIZE=seed_len)
+        allocate(the_seed(seed_len))
+        the_seed(1) = int((seed - int(seed)) * 1000000000._rtype)
+        if (seed_len > 1) the_seed(2:) = the_seed(1)
+        !the_seed(1:2)=seed
+        !! Gfortran uses longer seeds, so fill the rest with zero
+        !if (seed_len > 2) the_seed(3:) = seed(2)
+
+
+        call random_seed(put=the_seed)
+      end if
+
+
+      do i=1,nz
+        do j=1,nup
+           poi(i,j)=int(poidev(mu(i,j)))+1
+           if (poi(i,j)<1) then
+             !poi(i,j)=-poi(i,j)
+             print *,'poi<1'
+           end if
+        enddo
+      enddo
+
+    end subroutine Poisson
+
+    FUNCTION poidev(xm)
+      IMPLICIT NONE
+      REAL(rtype), INTENT(IN) :: xm
+      REAL(rtype) :: poidev
+      REAL(rtype), PARAMETER :: PI=3.141592653589793238462643383279502884197_rtype
+      !Returns as a floating-point number an integer value that is a random deviate drawn from a
+      !Poisson distribution of mean xm, using ran1 as a source of uniform random deviates.
+      REAL(rtype) :: em,harvest,t,y
+      REAL(rtype), SAVE :: alxm,g,oldm=-1.0_rtype,sq
+
+      !Begin code
+      !oldm is a flag for whether xm has changed since last call.
+      if (xm < 12.0) then !Use direct method.
+        if (xm /= oldm) then
+          oldm=xm
+          g=exp(-xm) !If xm is new, compute the exponential.
+        end if
+        em=-1
+        t=1.0_rtype
+        do
+          em=em+1.0_rtype     !Instead of adding exponential deviates it is
+                           !equivalent to multiply uniform deviates.
+                           !We never actually have to take the log;
+                           !merely compare to the pre-computed exponential.
+          call random_number(harvest)
+          t=t*harvest
+          if (t <= g) exit
+        end do
+      else      !    Use rejection method.
+        if (xm /= oldm) then  !If xm has changed since the last call, then precompute
+                               !some functions that occur below.
+          oldm=xm
+          sq=sqrt(2.0_rtype*xm)
+          alxm=log(xm)
+          g=xm*alxm-gammln_s(xm+1.0_rtype) ! The function gammln is the natural log of the
+                                        ! gamma function, as given in §6.1.
+        end if
+        do
+          do
+            call random_number(harvest)  !y is a deviate from a Lorentzian comparison
+            y=tan(PI*harvest)   !function.
+            em=sq*y+xm          !em is y, shifted and scaled.
+            if (em >= 0.0) exit !Reject if in regime of zero probability.
+          end do
+          em=int(em)          ! The trick for integer-valued distributions.
+          t=0.9_rtype*(1.0_rtype+y**2)*exp(em*alxm-gammln_s(em+1.0_rtype)-g)
+          !The ratio of the desired distribution to the comparison function; we accept or reject
+          !by comparing it to another uniform deviate. The factor 0.9 is chosen so that t never
+          !exceeds 1.
+          call random_number(harvest)
+          if (harvest <= t) exit
+        end do
+      end if
+      poidev=em
+    END FUNCTION poidev
+
+    FUNCTION arth_d(first,increment,n)
+      implicit none
+      REAL(rtype8), INTENT(IN) :: first,increment
+      INTEGER, PARAMETER :: NPAR_ARTH=16,NPAR2_ARTH=8
+      INTEGER, INTENT(IN) :: n
+      REAL(rtype8), DIMENSION(n) :: arth_d
+      INTEGER :: k,k2
+      REAL(rtype8) :: temp
+
+      ! Begin code
+      if (n > 0) arth_d(1)=first
+      if (n <= NPAR_ARTH) then
+        do k=2,n
+          arth_d(k)=arth_d(k-1)+increment
+        end do
+      else
+        do k=2,NPAR2_ARTH
+          arth_d(k)=arth_d(k-1)+increment
+        end do
+        temp=increment*NPAR2_ARTH
+        k=NPAR2_ARTH
+        do
+          if (k >= n) exit
+          k2=k+k
+          arth_d(k+1:min(k2,n))=temp+arth_d(1:min(k,n-k))
+          temp=temp+temp
+          k=k2
+        end do
+      end if
+    END FUNCTION arth_d
+
+    FUNCTION gammln_s(xx)
+      IMPLICIT NONE
+      REAL(rtype), INTENT(IN) :: xx
+      REAL(rtype) :: gammln_s
+      !Returns the value ln[Γ(xx)] for xx > 0.
+      REAL(rtype8) :: tmp,x
+      !Internal arithmetic will be done in double precision, a nicety that you can omit if five-figure
+      !accuracy is good enough.
+      REAL(rtype8) :: stp = 2.5066282746310005_rtype8
+      REAL(rtype8), DIMENSION(6) :: coef = (/76.18009172947146_rtype8,&
+        -86.50532032941677_rtype8,24.01409824083091_rtype8,&
+        -1.231739572450155_rtype8,0.1208650973866179e-2_rtype8,&
+        -0.5395239384953e-5_rtype8/)
+
+      !Begin code
+      !call assert(xx > 0.0, ’gammln_s arg’)
+      !if (xx .le. 0.) print *,'gammaln fails'
+      x=xx
+      tmp=x+5.5_rtype8
+      tmp=(x+0.5_rtype8)*log(tmp)-tmp
+      gammln_s=tmp+log(stp*(1.000000000190015_rtype8+&
+      sum(coef(:)/arth_d(x+1.0_rtype8,1.0_rtype8,size(coef))))/x)
+    END FUNCTION gammln_s
+
+>>>>>>> mj_02nov20_rebased
 
 end module edmf
 

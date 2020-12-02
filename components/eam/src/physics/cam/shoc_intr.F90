@@ -5,7 +5,7 @@ module shoc_intr
   ! Order Closure (SHOC), developed                                    !
   !    by Peter Bogenschutz (Bogenschutz and Krueger 2013).            !
   !                                                                    !
-  ! SHOC replaces the exisiting turbulence, shallow convection, and    !
+  ! SHOC replaces the existing turbulence, shallow convection, and     !
   !   macrophysics in E3SM                                             !
   !                                                                    !
   !                                                                    !
@@ -370,7 +370,7 @@ end function shoc_implements_cnst
     call addfld('CONCLD',(/'lev'/),  'A',        'fraction', 'Convective cloud cover')
     call addfld('BRUNT',(/'lev'/), 'A', 's-1', 'Brunt frequency')
     call addfld('RELVAR',(/'lev'/), 'A', 'kg/kg', 'SHOC cloud liquid relative variance')
-    
+
     call add_default('SHOC_TKE', 1, ' ')
     call add_default('WTHV_SEC', 1, ' ')
     call add_default('SHOC_MIX', 1, ' ')
@@ -392,65 +392,6 @@ end function shoc_implements_cnst
     call add_default('BRUNT',1,' ')
     call add_default('RELVAR',1,' ')
 
-    ! MKW added 20200608
-    call add_default('THETAL',1,' ')
-    call add_default('THETAV',1,' ')
-    call add_default('ZM_SHOC',1,' ')
-    call add_default('ZT_SHOC',1,' ')
-    call add_default('WTHV_SEC_tot',1,' ')
-    call add_default('PBL_H', 1, ' ')
-    call add_default('rho', 1, ' ')
-    call add_default('rho_i', 1, ' ')
-
-    ! Add EDMF fields - MKW 20200402
-    call addfld ( 'edmf_DRY_A'    , (/ 'ilev' /), 'A', 'fraction', 'Dry updraft area fraction (EDMF)' )
-    call addfld ( 'edmf_MOIST_A'  , (/ 'ilev' /), 'A', 'fraction', 'Moist updraft area fraction (EDMF)' )
-    call addfld ( 'edmf_DRY_W'    , (/ 'ilev' /), 'A', 'm/s'     , 'Dry updraft vertical velocity (EDMF)' )
-    call addfld ( 'edmf_MOIST_W'  , (/ 'ilev' /), 'A', 'm/s'     , 'Moist updraft vertical velocity (EDMF)' )
-    call addfld ( 'edmf_DRY_QT'   , (/ 'ilev' /), 'A', 'kg/kg'   , 'Dry updraft total water mixing ratio (EDMF)' )
-    call addfld ( 'edmf_MOIST_QT' , (/ 'ilev' /), 'A', 'kg/kg'   , 'Moist updraft total water mixing ratio (EDMF)' )
-    call addfld ( 'edmf_DRY_THL'  , (/ 'ilev' /), 'A', 'K'       , 'Dry updraft liquid-ice potential temperature (EDMF)' )
-    call addfld ( 'edmf_MOIST_THL', (/ 'ilev' /), 'A', 'K'       , 'Moist updraft liquid-ice potential temperature (EDMF)' )
-    call addfld ( 'edmf_DRY_U'    , (/ 'ilev' /), 'A', 'm/s'     , 'Dry updraft zonal velocity (EDMF)' )
-    call addfld ( 'edmf_MOIST_U'  , (/ 'ilev' /), 'A', 'm/s'     , 'Moist updraft zonal velocity (EDMF)' )
-    call addfld ( 'edmf_DRY_V'    , (/ 'ilev' /), 'A', 'm/s'     , 'Dry updraft meridional velocity (EDMF)' )
-    call addfld ( 'edmf_MOIST_V'  , (/ 'ilev' /), 'A', 'm/s'     , 'Moist updraft meridional velocity (EDMF)' )
-    call addfld ( 'edmf_MOIST_QC' , (/ 'ilev' /), 'A', 'kg/kg'   , 'Moist updraft condensate mixing ratio (EDMF)' )
-    call addfld ( 'edmf_S_AE'     , (/ 'ilev' /), 'A', 'fraction', 'a_e (EDMF)' )
-    call addfld ( 'edmf_S_AW'     , (/ 'ilev' /), 'A', 'm/s'     , 'Sum of a_i*w_i (EDMF)' )
-    call addfld ( 'edmf_S_AWTHV'  , (/ 'ilev' /), 'A', 'K m/s'   , 'Sum of a_i*w_i*thv_i (EDMF)' )
-    call addfld ( 'edmf_S_AWTHL'  , (/ 'ilev' /), 'A', 'K m/s'   , 'Sum of a_i*w_i*thl_i (EDMF)' )
-    call addfld ( 'edmf_S_AWQT'   , (/ 'ilev' /), 'A', 'kgm/kgs' , 'Sum of a_i*w_i*q_ti (EDMF)' )
-    call addfld ( 'edmf_S_AWU'    , (/ 'ilev' /), 'A', 'm2/s2'   , 'Sum of a_i*w_i*u_i (EDMF)' )
-    call addfld ( 'edmf_S_AWV'    , (/ 'ilev' /), 'A', 'm2/s2'   , 'Sum of a_i*w_i*v_i (EDMF)' )
-    call addfld ( 'edmf_thlflx'   , (/ 'ilev' /), 'A', 'K m/s'   , 'thl flux by edmf (EDMF)' )
-    call addfld ( 'edmf_qtflx'    , (/ 'ilev' /), 'A', 'kg/kg/s' , 'qt flux by edmf (EDMF)' )
-
-    call add_default( 'edmf_DRY_A'    , 1, ' ')
-    call add_default( 'edmf_MOIST_A'  , 1, ' ')
-    call add_default( 'edmf_DRY_W'    , 1, ' ')
-    call add_default( 'edmf_MOIST_W'  , 1, ' ')
-    call add_default( 'edmf_DRY_QT'   , 1, ' ')
-    call add_default( 'edmf_MOIST_QT' , 1, ' ')
-    call add_default( 'edmf_DRY_THL'  , 1, ' ')
-    call add_default( 'edmf_MOIST_THL', 1, ' ')
-    call add_default( 'edmf_DRY_U'    , 1, ' ')
-    call add_default( 'edmf_MOIST_U'  , 1, ' ')
-    call add_default( 'edmf_DRY_V'    , 1, ' ')
-    call add_default( 'edmf_MOIST_V'  , 1, ' ')
-    call add_default( 'edmf_MOIST_QC' , 1, ' ')
-    call add_default( 'edmf_S_AE'     , 1, ' ')
-    call add_default( 'edmf_S_AW'     , 1, ' ')
-    call add_default( 'edmf_S_AWTHV'  , 1, ' ')
-    call add_default( 'edmf_S_AWTHL'  , 1, ' ')
-    call add_default( 'edmf_S_AWQT'   , 1, ' ')
-    call add_default( 'edmf_S_AWU'    , 1, ' ')
-    call add_default( 'edmf_S_AWV'    , 1, ' ')
-    call add_default( 'edmf_thlflx'   , 1, ' ')
-    call add_default( 'edmf_qtflx'    , 1, ' ')
-
-=======
-     
     ! Extra output variables:
     call addfld('THETAL',(/'lev'/), 'A', 'K', 'Liq. water potential temperature')
     call addfld('THETAV',(/'lev'/), 'A', 'K', 'Virtual potential temperature')
@@ -464,20 +405,20 @@ end function shoc_implements_cnst
     call addfld('CLD_SHOC', (/ 'lev' /), 'A', 'fraction' , 'cld from SHOC')
     call addfld('AST', (/ 'lev' /), 'A', 'fraction' , 'Stratiform cloud fraction from shoc_intr.F90')
     call addfld('DEEPCU', (/ 'lev' /), 'A', 'fraction' , 'Deep convection cloud fraction from shoc_intr.F90')
-    
+
     call add_default('THETAL',1,' ')
     call add_default('THETAV',1,' ')
-    call add_default('QW', 1, ' ')   
+    call add_default('QW', 1, ' ')
     call add_default('ZM',1,' ')
     call add_default('ZT',1,' ')
     call add_default('WTHV_SEC_tot',1,' ')
     call add_default('PBL_H', 1, ' ')
-    call add_default('rho', 1, ' ')  
-    call add_default('rho_i', 1, ' ')  
+    call add_default('rho', 1, ' ')
+    call add_default('rho_i', 1, ' ')
     call add_default('CLD_SHOC', 1, ' ')
     call add_default('AST', 1, ' ')
     call add_default('DEEPCU', 1, ' ')
-    
+
     ! Add EDMF fields
     call addfld ( 'mf_dry_a'    , (/ 'ilev' /), 'A', 'fraction'    , 'Dry updraft area fraction (EDMF)' )
     call addfld ( 'mf_moist_a'  , (/ 'ilev' /), 'A', 'fraction'    , 'Moist updraft area fraction (EDMF)' )
@@ -507,7 +448,7 @@ end function shoc_implements_cnst
     call addfld ( 'mf_qtflx_watts'     , (/ 'ilev' /), 'A', 'W/m2' , 'Dynamic qt flux by edmf (EDMF)' )
     call addfld ( 'mf_thvflx_zt'       , (/ 'lev' /) , 'A', 'K m/s', 'Kinematic thv (buoyancy) flux by edmf (EDMF) in thermodynamic grid' )
     call addfld ( 'mf_thvflx_zt_watts' , (/ 'lev' /) , 'A', 'W/m2' , 'Dynamic thv (buoyancy) flux by edmf (EDMF) in thermodynamic grid' )
-    
+
     call add_default( 'mf_dry_a'           , 1, ' ')
     call add_default( 'mf_moist_a'         , 1, ' ')
     call add_default( 'mf_dry_w'           , 1, ' ')
@@ -536,7 +477,8 @@ end function shoc_implements_cnst
     call add_default( 'mf_qtflx_watts'     , 1, ' ')
     call add_default( 'mf_thvflx_zt'       , 1, ' ')
     call add_default( 'mf_thvflx_zt_watts' , 1, ' ')
-    
+
+
     ! ---------------------------------------------------------------!
     ! Initialize SHOC                                                !
     ! ---------------------------------------------------------------!
@@ -693,7 +635,7 @@ end function shoc_implements_cnst
    ! Total wthv flux with MF contribution
    real(r8) :: wthv_sec_tot(pcols,pver)    ! output from shoc_main in K m/s
    real(r8) :: wthv_tot_output(pcols,pver) ! output in W/m2
-  
+
    real(r8) :: obklen(pcols), ustar2(pcols), kinheat(pcols), kinwat(pcols)
    real(r8) :: dummy2(pcols), dummy3(pcols), kbfs(pcols), th(pcols,pver), thv(pcols,pver)
    real(r8) :: thv2(pcols,pver)
@@ -712,14 +654,14 @@ end function shoc_implements_cnst
              mf_dry_thl, mf_moist_thl, &
              mf_dry_u, mf_moist_u, &
              mf_dry_v, mf_moist_v, &
-             mf_moist_qc, &  
+             mf_moist_qc, &
              mf_ae, mf_aw, mf_awthv, mf_awthl, mf_awqt, mf_awql, mf_awqi, mf_awu, mf_awv, &
-             mf_thlflx, mf_thvflx, mf_qtflx, &           ! Kinematic fluxes 
+             mf_thlflx, mf_thvflx, mf_qtflx, &           ! Kinematic fluxes
              mf_thlflx_out,mf_thvflx_out,mf_qtflx_out    ! Dynamic fluxes (W/m2)
-             
+
    real(r8), dimension(pcols,pver) :: mf_thvflx_zt, mf_thvflx_zt_out
    real(r8), dimension(pcols,pver) :: mf_ae_zt, mf_moist_a_zt
-   
+
    ! Variables below are needed to compute energy integrals for conservation
    real(r8) :: ke_a(pcols), ke_b(pcols), te_a(pcols), te_b(pcols)
    real(r8) :: wv_a(pcols), wv_b(pcols), wl_b(pcols), wl_a(pcols)
@@ -757,6 +699,8 @@ end function shoc_implements_cnst
 
    logical :: lqice(pcnst)
    real(r8) :: relvarmax
+
+   logical :: do_edmf_in
 
    !------------------------------------------------------------------!
    !------------------------------------------------------------------!
@@ -958,6 +902,7 @@ end function shoc_implements_cnst
    ! ------------------------------------------------- !
    ! Actually call SHOC                                !
    ! ------------------------------------------------- !
+   do_edmf_in = .true. ! MKW TODO: set this is a namelist variable
 
    call shoc_main( &
         ncol, pver, pverp, dtime, nadv, &                                                         ! Input
@@ -978,9 +923,10 @@ end function shoc_implements_cnst
         uw_sec_out(:ncol,:), vw_sec_out(:ncol,:), w3_out(:ncol,:), &                              ! Output (diagnostic)
         wqls_out(:ncol,:),brunt_out(:ncol,:),rcm2(:ncol,:), &                                     ! Output (diagnostic)
         wthv_sec_tot(:ncol,:), &                                                                  ! Output (EDMF diagnostic)
-        mf_dry_a(:ncol,:),   mf_moist_a(:ncol,:), &                                                 ! Output (EDMF diagnostic)
-        mf_dry_w(:ncol,:),   mf_moist_w(:ncol,:), &                                                 ! Output (EDMF diagnostic)
-        mf_dry_qt(:ncol,:),  mf_moist_qt(:ncol,:), &                                               ! Output (EDMF diagnostic)
+        do_edmf_in, &                                                                                ! Input (EDMF control)
+        mf_dry_a(:ncol,:), mf_moist_a(:ncol,:), &                                                 ! Output (EDMF diagnostic)
+        mf_dry_w(:ncol,:), mf_moist_w(:ncol,:), &                                                 ! Output (EDMF diagnostic)
+        mf_dry_qt(:ncol,:), mf_moist_qt(:ncol,:), &                                               ! Output (EDMF diagnostic)
         mf_dry_thl(:ncol,:), mf_moist_thl(:ncol,:), &                                             ! Output (EDMF diagnostic)
         mf_dry_u(:ncol,:),   mf_moist_u(:ncol,:), &                                                 ! Output (EDMF diagnostic)
         mf_dry_v(:ncol,:),   mf_moist_v(:ncol,:), &                                                 ! Output (EDMF diagnostic)
@@ -1273,7 +1219,7 @@ end function shoc_implements_cnst
     call outfld('CONCLD',concld,pcols,lchnk)
     call outfld('BRUNT',brunt_out,pcols,lchnk)
     call outfld('RELVAR',relvar,pcols,lchnk)
-    
+
     !Extra output variables
     call outfld('THETAL',thlm,pcols,lchnk)
     call outfld('THETAV',thv,pcols,lchnk)
@@ -1287,7 +1233,7 @@ end function shoc_implements_cnst
     call outfld('CLD_SHOC', cld, pcols, lchnk)
     call outfld('AST', ast, pcols, lchnk)
     call outfld('DEEPCU', deepcu, pcols, lchnk)
-    
+
     ! EDMF outputs
     call outfld( 'mf_dry_a'    , mf_dry_a,     pcols, lchnk )
     call outfld( 'mf_moist_a'  , mf_moist_a,   pcols, lchnk )
