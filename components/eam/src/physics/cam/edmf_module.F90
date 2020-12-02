@@ -3,6 +3,7 @@ module edmf
   use physics_utils, only: rtype, rtype8, itype!, btype ! MKW: btype not currently used
 
   use physconst,     only: rgas => rair, cp => cpair, ggr => gravit, &
+                           lcond => latvap, lice => latice, eps => zvir
   use spmd_utils,    only: masterproc
 
   implicit none
@@ -1244,7 +1245,6 @@ contains
       sum(coef(:)/arth_d(x+1.0_rtype8,1.0_rtype8,size(coef))))/x)
     END FUNCTION gammln_s
 
->>>>>>> mj_02nov20_rebased
 
 end module edmf
 
