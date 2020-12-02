@@ -537,7 +537,6 @@ end function shoc_implements_cnst
     call add_default( 'mf_thvflx_zt'       , 1, ' ')
     call add_default( 'mf_thvflx_zt_watts' , 1, ' ')
     
->>>>>>> origin/mj_02nov20_rebased
     ! ---------------------------------------------------------------!
     ! Initialize SHOC                                                !
     ! ---------------------------------------------------------------!

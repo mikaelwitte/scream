@@ -19,15 +19,9 @@ module cam_comp
    use ppgrid,            only: begchunk, endchunk
    use perf_mod
    use cam_logfile,       only: iulog
-<<<<<<< HEAD
-   use physics_buffer,            only: physics_buffer_desc
-   use scamMod,           only: single_column
-
-=======
    use physics_buffer,    only: physics_buffer_desc
    use scamMod,           only: single_column
    
->>>>>>> upstream_master_merge2
    implicit none
    private
    save
