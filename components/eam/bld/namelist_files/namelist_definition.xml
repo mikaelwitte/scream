@@ -2906,6 +2906,50 @@ liq cloud fraction bug in macro and micro physics
 Default: .false.
 </entry>
 
+<!-- for SHOC+MF -->
+<entry id="mf_L0" type="real" category="conv"
+       group="shoc_mf_nl" valid_values="" >
+Real: Entrainment length scale in meters for individual plumes
+Default: 50.0
+</entry>
+
+<entry id="mf_ent0" type="real" category="conv"
+       group="shoc_mf_nl" valid_values="" >
+Real: Entrainment efficiency for individual plumes
+Default: 0.22
+</entry>
+
+<entry id="mf_nup" type="integer" category="conv"
+       group="shoc_mf_nl" valid_values="" >
+Real: number of plumes in mass flux ensemble
+Default: 10
+</entry>
+
+<entry id="do_edmf" type="logical" category="conv"
+       group="shoc_mf_nl" valid_values="" >
+If TRUE runs subroutine integrate_mf that computes updrafts properties (Suselj et al 2013/2019)
+Default: FALSE
+</entry>
+
+<entry id="do_condensation" type="logical" category="conv"
+       group="shoc_mf_nl" valid_values="" >
+If TRUE, the subroutine integrate_mf also computes moist updrafts properties (Suselj et al 2019)
+Default: FALSE
+</entry>
+
+<entry id="do_mf_diag" type="logical" category="conv"
+       group="shoc_mf_nl" valid_values="" >
+If TRUE adds the mass-flux contribution to the diffusion solver
+The coupling of MF with SHOC constitutes an eddy-diffusivity mass-flux approach. 
+Default: FALSE
+</entry>
+
+<entry id="do_wthv_mf" type="logical" category="conv"
+       group="shoc_mf_nl" valid_values="" >
+If TRUE, subroutine wthv_mf calculates total buoyancy flux (ED+MF)
+Default: FALSE
+</entry>
+
 <!-- SHOC timestep -->
 <entry id="shoc_timestep" type="real" category="pblrad"
        group="shocpbl_diff_nl" valid_values="" >

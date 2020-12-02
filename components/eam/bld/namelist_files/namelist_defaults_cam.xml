@@ -981,6 +981,15 @@
 <clubb_history               > .false. </clubb_history>
 <clubb_rad_history           > .false. </clubb_rad_history>
 
+<!-- SHOC+MF options -->
+<mf_L0                                  > 50.0    </mf_L0>
+<mf_ent0                                > 0.22     </mf_ent0>
+<mf_nup                                 > 10      </mf_nup>
+<do_edmf                                > .false. </do_edmf>
+<do_condensation                        > .false. </do_condensation>
+<do_mf_diag                             > .false. </do_mf_diag>
+<do_wthv_mf                             > .false. </do_wthv_mf>
+
 <!-- MMF -->
 <MMF_microphysics_scheme MMF_microphysics_scheme="sam1mom">sam1mom</MMF_microphysics_scheme>
 <MMF_microphysics_scheme MMF_microphysics_scheme="m2005">m2005</MMF_microphysics_scheme>
