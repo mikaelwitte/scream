@@ -295,7 +295,7 @@ subroutine shoc_main ( &
   ! cloud liquid mixing ratio [kg/kg]
   real(rtype), intent(inout) :: shoc_ql(shcol,nlev)
 
-  ! MW:  when we get to the final implementation, remove this as it will all be handled by do_edmf
+  ! EDMF VARIABLES (all inout - MKW: is this necessary?)
   ! mf_* are diagnostic variables
   ! s_* are integrated plume fluxes for calculating MF contribution to total tendencies
   real(rtype), intent(inout), dimension(shcol,nlevi) :: &
@@ -317,9 +317,10 @@ subroutine shoc_main ( &
       mf_awqi,  & ! sum(a_i * w_i * qi_i) [(kg/kg) m/s]
       mf_awu,   & ! sum(a_i * w_i * u_i) [m^2/s^2]
       mf_awv      ! sum(a_i * w_i * v_i) [m^2/s^2]
-
   ! wthv MF flux in zt grid as wthv_sec_tot
   real(rtype), intent(inout) :: mf_thvflx_zt(shcol,nlev)
+  ! 2D statistics of plume activation frequency, one for dry and one for moist plumes
+  real(rtype), intent(inout) :: mf_dry_freq(shcol), mf_moist_freq(shcol)
 
   ! OUTPUT VARIABLES
 
@@ -458,7 +459,8 @@ subroutine shoc_main ( &
                mf_awthv, &                               ! Output for total wthv
                mf_awthl,   mf_awqt, &                    ! Output - for diffusion solver
                mf_awql,    mf_awqi, &                    ! Output - for diffusion solver/PDF closure but not coupled yet
-               mf_awu,     mf_awv )                      ! Output - for diffusion solver/PDF closure but not coupled yet
+               mf_awu,     mf_awv,  &                    ! Output - for diffusion solver/PDF closure but not coupled yet
+               mf_dry_freq,mf_moist_freq)                ! Output - 2D statistics of plume activation frequency
     else
        mf_dry_a = 0._rtype
        mf_dry_w = 0._rtype

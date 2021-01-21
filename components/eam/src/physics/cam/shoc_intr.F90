@@ -452,6 +452,8 @@ end function shoc_implements_cnst
     call addfld ( 'mf_qtflx_watts'     , (/ 'ilev' /), 'A', 'W/m2' , 'Dynamic qt flux by edmf (EDMF)' )
     call addfld ( 'mf_thvflx_zt'       , (/ 'lev' /) , 'A', 'K m/s', 'Kinematic thv (buoyancy) flux by edmf (EDMF) in thermodynamic grid' )
     call addfld ( 'mf_thvflx_zt_watts' , (/ 'lev' /) , 'A', 'W/m2' , 'Dynamic thv (buoyancy) flux by edmf (EDMF) in thermodynamic grid' )
+    call addfld ( 'mf_dry_freq'  , horiz_only , 'A', 'fraction'    , 'Frequency of dry plume activation' )
+    call addfld ( 'mf_moist_freq', horiz_only , 'A', 'fraction'    , 'Frequency of moist plume activation' )
 
     call add_default( 'mf_dry_a'           , 1, ' ')
     call add_default( 'mf_moist_a'         , 1, ' ')
@@ -481,6 +483,8 @@ end function shoc_implements_cnst
     call add_default( 'mf_qtflx_watts'     , 1, ' ')
     call add_default( 'mf_thvflx_zt'       , 1, ' ')
     call add_default( 'mf_thvflx_zt_watts' , 1, ' ')
+    call add_default( 'mf_dry_freq'        , 1, ' ')
+    call add_default( 'mf_moist_freq'      , 1, ' ')
 
 
     ! ---------------------------------------------------------------!
@@ -662,9 +666,9 @@ end function shoc_implements_cnst
              mf_ae, mf_aw, mf_awthv, mf_awthl, mf_awqt, mf_awql, mf_awqi, mf_awu, mf_awv, &
              mf_thlflx, mf_thvflx, mf_qtflx, &           ! Kinematic fluxes
              mf_thlflx_out,mf_thvflx_out,mf_qtflx_out    ! Dynamic fluxes (W/m2)
-
    real(r8), dimension(pcols,pver) :: mf_thvflx_zt, mf_thvflx_zt_out
    real(r8), dimension(pcols,pver) :: mf_ae_zt, mf_moist_a_zt
+   real(r8), dimension(pcols)      :: mf_dry_freq, mf_moist_freq
 
    ! Variables below are needed to compute energy integrals for conservation
    real(r8) :: ke_a(pcols), ke_b(pcols), te_a(pcols), te_b(pcols)
@@ -934,10 +938,11 @@ end function shoc_implements_cnst
         mf_thlflx(:ncol,:), mf_qtflx(:ncol,:), &                            ! Output (EDMF diagnostic)
         mf_thvflx(:ncol,:), mf_thvflx_zt(:ncol,:), &                                              ! Output (EDMF diagnostic)
         mf_ae(:ncol,:), mf_aw(:ncol,:), &
-        mf_awthv(:ncol,:), &
+        mf_awthv(:ncol,:), & ! Output (EDMF diagnostic)
         mf_awthl(:ncol,:), mf_awqt(:ncol,:), & ! Output (EDMF diagnostic)
-        mf_awql(:ncol,:), mf_awqi(:ncol,:), &
-        mf_awu(:ncol,:), mf_awv(:ncol,:) )                    ! Output (EDMF diagnostic)
+        mf_awql(:ncol,:), mf_awqi(:ncol,:), & ! Output (EDMF diagnostic)
+        mf_awu(:ncol,:), mf_awv(:ncol,:), & ! Output (EDMF diagnostic)
+        mf_dry_freq(:), mf_moist_freq(:) )                    ! Output (EDMF diagnostic)
 
    ! Transfer back to pbuf variables
    call linear_interp(zi_g(:ncol,:pverp),zt_g(:ncol,:pver),mf_ae(:ncol,:pverp),&
