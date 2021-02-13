@@ -1885,6 +1885,10 @@ contains
       elem(1)%state%dp3d(:,:,k,np1) = elem(1)%state%dp3d(:,:,k,n0) &
         + dt*(eta_dot_dpdn(:,:,k+1) - eta_dot_dpdn(:,:,k))    
     enddo       
+    
+    do k=1,nlev
+      elem(1)%state%T(:,:,k,np1) = elem(1)%state%T(:,:,k,n0)
+    enddo
 
     do p=1,qsize
       do k=1,nlev
