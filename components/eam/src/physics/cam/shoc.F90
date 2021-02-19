@@ -69,7 +69,7 @@ real(rtype), parameter :: w2tune=1.0_rtype
 ! third moment of vertical velocity
 real(rtype), parameter :: w3clip=1.2_rtype
 ! mixing length scaling parameter
-real(rtype), parameter :: length_fac=0.5_rtype
+real(rtype), parameter :: length_fac=1.0_rtype
 ! coefficient for diag third moment parameters
 real(rtype), parameter :: c_diag_3rd_mom = 7.0_rtype
 
@@ -216,7 +216,8 @@ subroutine shoc_main ( &
      mf_ae, mf_aw, &                      ! Output (EDMF diagnostic)
      mf_awthv, mf_awthl, mf_awqt,&        ! Output (EDMF diagnostic)
      mf_awql, mf_awqi, &                  ! Output (EDMF diagnostic)
-     mf_awu, mf_awv)                      ! Output (EDMF diagnostic)
+     mf_awu, mf_awv, &                    ! Output (EDMF diagnostic)
+     mf_dry_freq, mf_moist_freq)          ! Output (EDMF diagnostic)
 
   implicit none
 

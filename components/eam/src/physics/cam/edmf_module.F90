@@ -343,9 +343,6 @@ contains
            enddo
          enddo
 
-         print*,'mf_L0 = ',mf_L0
-         print*,'mf_ent0 = ', mf_ent0 
-         print*, 'mf_nup = ',mf_nup
          ! get poisson P(dz/L0)
          !if (debug) then
          !   enti(:,:) = 4
@@ -553,12 +550,13 @@ contains
 
        end if  ! ( wthv > 0.0 )
 
-       if (ANY(dry_a  (j,:))>0._rtype) freq_dry(i)   = 1._rtype
-       if (ANY(moist_a(j,:))>0._rtype) freq_moist(i) = 1._rtype
+       if (ANY(dry_a  (j,:)>0._rtype)) freq_dry(j)   = 1._rtype
+       if (ANY(moist_a(j,:)>0._rtype)) freq_moist(j) = 1._rtype
      end do ! j=1,shcol
 
      ! flip output variables so index 1 = model top (i.e. lowest pressure)
      do k=1,nzi
+       dry_a_out(:,nzi-k+1) = dry_a(:,k)
        dry_w_out(:,nzi-k+1) = dry_w(:,k)
        dry_qt_out(:,nzi-k+1) = dry_qt(:,k)
        dry_thl_out(:,nzi-k+1) = dry_thl(:,k)
