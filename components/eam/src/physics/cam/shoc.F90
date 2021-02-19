@@ -69,7 +69,7 @@ real(rtype), parameter :: w2tune=1.0_rtype
 ! third moment of vertical velocity
 real(rtype), parameter :: w3clip=1.2_rtype
 ! mixing length scaling parameter
-real(rtype), parameter :: length_fac=0.5_rtype
+real(rtype), parameter :: length_fac=1.0_rtype
 ! coefficient for diag third moment parameters
 real(rtype), parameter :: c_diag_3rd_mom = 7.0_rtype
 
@@ -216,7 +216,8 @@ subroutine shoc_main ( &
      mf_ae, mf_aw, &                      ! Output (EDMF diagnostic)
      mf_awthv, mf_awthl, mf_awqt,&        ! Output (EDMF diagnostic)
      mf_awql, mf_awqi, &                  ! Output (EDMF diagnostic)
-     mf_awu, mf_awv)                      ! Output (EDMF diagnostic)
+     mf_awu, mf_awv, &                    ! Output (EDMF diagnostic)
+     mf_dry_freq, mf_moist_freq)          ! Output (EDMF diagnostic)
 
   implicit none
 
@@ -295,7 +296,7 @@ subroutine shoc_main ( &
   ! cloud liquid mixing ratio [kg/kg]
   real(rtype), intent(inout) :: shoc_ql(shcol,nlev)
 
-  ! MW:  when we get to the final implementation, remove this as it will all be handled by do_edmf
+  ! EDMF VARIABLES (all inout - MKW: is this necessary?)
   ! mf_* are diagnostic variables
   ! s_* are integrated plume fluxes for calculating MF contribution to total tendencies
   real(rtype), intent(inout), dimension(shcol,nlevi) :: &
@@ -317,9 +318,10 @@ subroutine shoc_main ( &
       mf_awqi,  & ! sum(a_i * w_i * qi_i) [(kg/kg) m/s]
       mf_awu,   & ! sum(a_i * w_i * u_i) [m^2/s^2]
       mf_awv      ! sum(a_i * w_i * v_i) [m^2/s^2]
-
   ! wthv MF flux in zt grid as wthv_sec_tot
   real(rtype), intent(inout) :: mf_thvflx_zt(shcol,nlev)
+  ! 2D statistics of plume activation frequency, one for dry and one for moist plumes
+  real(rtype), intent(inout) :: mf_dry_freq(shcol), mf_moist_freq(shcol)
 
   ! OUTPUT VARIABLES
 
@@ -458,7 +460,8 @@ subroutine shoc_main ( &
                mf_awthv, &                               ! Output for total wthv
                mf_awthl,   mf_awqt, &                    ! Output - for diffusion solver
                mf_awql,    mf_awqi, &                    ! Output - for diffusion solver/PDF closure but not coupled yet
-               mf_awu,     mf_awv )                      ! Output - for diffusion solver/PDF closure but not coupled yet
+               mf_awu,     mf_awv,  &                    ! Output - for diffusion solver/PDF closure but not coupled yet
+               mf_dry_freq,mf_moist_freq)                ! Output - 2D statistics of plume activation frequency
     else
        mf_dry_a = 0._rtype
        mf_dry_w = 0._rtype
@@ -1226,7 +1229,7 @@ subroutine diag_second_shoc_moments(&
   real(rtype), intent(in) :: uw_sfc(shcol)
   ! Surface momentum flux (v-direction) [m2/s2]
   real(rtype), intent(in) :: vw_sfc(shcol)
-
+  
   ! Begin EDMF-specific inputs
   ! Include MF in fluxes?
   logical,     intent(in) :: do_mf
@@ -1583,7 +1586,7 @@ subroutine diag_second_moments(&
   logical :: do_total_fluxes
   !Dummy variable
   real(rtype) :: aw_dummy(shcol,nlevi)
-
+  
   ! Interpolate some variables from the midpoint grid to the interface grid
   call linear_interp(zt_grid,zi_grid,isotropy,isotropy_zi,nlev,nlevi,shcol,0._rtype)
   call linear_interp(zt_grid,zi_grid,tkh,tkh_zi,nlev,nlevi,shcol,0._rtype)
@@ -1780,7 +1783,7 @@ subroutine calc_shoc_vertflux(&
   integer :: i, k, kt
   real(rtype) :: grid_dz
   real(rtype) :: invar_zi(shcol,nlevi)
-
+  
 #ifdef SCREAM_CONFIG_IS_CMAKE
    if (use_cxx) then
       call calc_shoc_vertflux_f(shcol,nlev,nlevi,tkh_zi,dz_zi,invar,&  ! Input
@@ -1788,7 +1791,7 @@ subroutine calc_shoc_vertflux(&
       return
    endif
 #endif
-
+   
   call linear_interp(zt_grid,zi_grid,invar,invar_zi,nlev,nlevi,shcol,0._rtype)
 
   if (do_total_fluxes) then
@@ -1889,8 +1892,6 @@ subroutine diag_second_moments_ubycond(&
   enddo ! end i loop (column loop)
   return
 end subroutine diag_second_moments_ubycond
-
-!
 
 ! =========================================================
 ! SHOC Diagnose the third order moment of vertical velocity

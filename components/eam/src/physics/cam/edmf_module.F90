@@ -110,7 +110,8 @@ contains
                  awthv_out,                                        & ! output: variable needed for total wthv
                  awthl_out, awqt_out,                              & ! output: variables needed for  diffusion solver
                  awql_out, awqi_out,                               & ! output: variables needed for  diffusion solver
-                 awu_out, awv_out)                                   ! output: variables needed for  diffusion solver
+                 awu_out, awv_out,                                 & ! output: variables needed for  diffusion solver
+                 freq_dry, freq_moist )                              ! output: frequency of plume activation (2D)
                  !thlflx_out, qtflx_out )                             ! output: MF turbulent flux diagnostics
   
   ! ================================================================================= !
@@ -160,6 +161,9 @@ contains
                                                       awqt_out,     awql_out,        &
                                                       awqi_out,     awu_out,         &
                                                       awv_out
+
+     ! plume activation frequency
+     real(rtype),dimension(shcol),     intent(out) :: freq_dry,     freq_moist
                                                         
      !! Flux diagnostics - currently diagnosed elsewhere
      !real(rtype),dimension(shcol,nzi), intent(out) :: thlflx_out, qtflx_out
@@ -339,9 +343,6 @@ contains
            enddo
          enddo
 
-         print*,'mf_L0 = ',mf_L0
-         print*,'mf_ent0 = ', mf_ent0 
-         print*, 'mf_nup = ',mf_nup
          ! get poisson P(dz/L0)
          !if (debug) then
          !   enti(:,:) = 4
@@ -548,6 +549,9 @@ contains
          !qtflx(j,1) = 0._rtype
 
        end if  ! ( wthv > 0.0 )
+
+       if (ANY(dry_a  (j,:)>0._rtype)) freq_dry(j)   = 1._rtype
+       if (ANY(moist_a(j,:)>0._rtype)) freq_moist(j) = 1._rtype
      end do ! j=1,shcol
 
      ! flip output variables so index 1 = model top (i.e. lowest pressure)
@@ -1208,12 +1212,10 @@ contains
 
       do i=1,nz
         do j=1,nup
-           poi(i,j)=poidev(mu(i,j))
-           if (poi(i,j)<0._rtype) then
-             poi(i,j)=-poi(i,j)
-             print *,'poi<0'
-           elseif (poi(i,j)>10000._rtype) then
-             print *,'poi>1e4'
+           poi(i,j)=int(poidev(mu(i,j)))+1
+           if (poi(i,j)<1) then
+             !poi(i,j)=-poi(i,j)
+             print *,'poi<1'
            end if
         enddo
       enddo
